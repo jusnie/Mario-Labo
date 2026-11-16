@@ -51,9 +51,10 @@ export function materialSignature(mat) {
 /** Window glass: fresh per building so the night glow can be animated. */
 export function makeGlassMaterial() {
   return new THREE.MeshStandardMaterial({
-    color: 0x18222e,
-    roughness: 0.18,
-    metalness: 0.05,
+    map: TEX.glassPane(),
+    color: 0xffffff,
+    roughness: 0.14,
+    metalness: 0.1,
     emissive: new THREE.Color(0xffc87a),
     emissiveIntensity: 0,
   });
@@ -196,7 +197,7 @@ export function corrugatedSlab({ slopeLength, ridgeLength, ribDepth = 0.028, rib
     for (let j = 0; j <= nz; j++) {
       const v = j / nz;
       pos.push(x, rib + dip, (v - 0.5) * ridgeLength);
-      uvs.push(u * (slopeLength * 1.6), v * (ridgeLength * 0.4));
+      uvs.push(u * (slopeLength / 1.8), v * (ridgeLength / 1.8));
     }
   }
   for (let i = 0; i < nx; i++) {
@@ -381,13 +382,13 @@ export function hipRoof({
   material = null,
   fasciaMaterial = null,
   ridgeCap = true,
-  uvScale = 1.6,
+  uvScale = 1.8,
 } = {}) {
   const g = new THREE.Group();
   const mat =
     material ??
     sharedMaterial("hiproof", () =>
-      new THREE.MeshStandardMaterial({ map: TEX.corrugated(6, "#87938b"), roughness: 0.7, metalness: 0.2 })
+      new THREE.MeshStandardMaterial({ map: TEX.corrugated(1, "#87938b"), roughness: 0.7, metalness: 0.2 })
     );
   const hw = width / 2 + overhang;
   const hd = depth / 2 + overhang;
@@ -452,7 +453,7 @@ export function hipRoof({
 
   if (ridgeCap) {
     const capMat = sharedMaterial("hiproof-cap", () =>
-      new THREE.MeshStandardMaterial({ map: TEX.corrugated(2, "#6f7a73"), roughness: 0.6, metalness: 0.3 })
+      new THREE.MeshStandardMaterial({ map: TEX.corrugated(1, "#6f7a73"), roughness: 0.6, metalness: 0.3 })
     );
     const cap = new THREE.Mesh(new THREE.BoxGeometry(rx * 2 + 0.3, 0.16, 0.34), capMat);
     cap.position.y = rise + 0.02;
@@ -925,6 +926,52 @@ export function pottedPlant({ scale = 1, leafCount = 7, potColor = 0xa9603c } = 
  * with broad leaves and a hanging purple fruit. Flat planes spun at random were
  * what stood in for these before.
  */
+/**
+ * A soft contact shadow, baked into a radial alpha texture. Real-time shadows
+ * alone leave buildings looking pasted onto the ground; a smudge of ambient
+ * occlusion under the footprint is what sells the join.
+ */
+const CONTACT_TEXTURES = new Map();
+export function groundShadow({ width = 8, depth = 8, opacity = 0.45, spread = 0.62 } = {}) {
+  const key = `contactshadow:${spread}`;
+  if (!CONTACT_TEXTURES.has(key)) CONTACT_TEXTURES.set(key, (() => {
+    const size = 256;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const g = ctx.createRadialGradient(size / 2, size / 2, size * 0.04, size / 2, size / 2, size * 0.5);
+    g.addColorStop(0, "rgba(0,0,0,0.95)");
+    g.addColorStop(spread * 0.7, "rgba(0,0,0,0.55)");
+    g.addColorStop(spread * 0.88, "rgba(0,0,0,0.22)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    const t = new THREE.CanvasTexture(canvas);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.needsUpdate = true;
+    return t;
+  })());
+  const tex = CONTACT_TEXTURES.get(key);
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, depth),
+    sharedMaterial(
+      `contactmat:${opacity}`,
+      () =>
+        new THREE.MeshBasicMaterial({
+          map: tex,
+          transparent: true,
+          opacity,
+          depthWrite: false,
+          color: 0x0a0d08,
+        })
+    )
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.renderOrder = 2;
+  mesh.userData.noMerge = true;
+  return mesh;
+}
+
 export function cropPlant({ kind = "pechay", scale = 1, seed = 3 } = {}) {
   const g = new THREE.Group();
   const r = makeNoise(seed);

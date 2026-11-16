@@ -8,7 +8,7 @@
  */
 import * as THREE from "three";
 import { buildHouse, gableRoof, placeColliders } from "./world.js";
-import { jar, pottedPlant, mergeStaticGroup, gardenBed, sharedMaterial } from "./models.js";
+import { jar, pottedPlant, mergeStaticGroup, gardenBed, sharedMaterial, groundShadow } from "./models.js";
 import * as TEX from "./textures.js";
 
 /* ------------------------------------------------------------------- store */
@@ -294,6 +294,9 @@ export async function createStore(scene, colliders, characters) {
   /* where the camera settles when you talk to her */
   mergeStaticGroup(group);
   scene.add(group);
+  const storeShadow = groundShadow({ width: W + 5, depth: D + 5, opacity: 0.32 });
+  storeShadow.position.set(group.position.x, 0.026, group.position.z);
+  scene.add(storeShadow);
 
   const focusLocal = new THREE.Vector3(0, 1.42, D / 2 + 1.55);
   const focusWorld = focusLocal.clone().applyMatrix4(new THREE.Matrix4().compose(group.position, new THREE.Quaternion().setFromEuler(group.rotation), new THREE.Vector3(1, 1, 1)));
@@ -364,6 +367,9 @@ export function createErniesHouse(scene, colliders) {
   scene.add(group);
 
   colliders.push(...placeColliders(localColliders, group, "ernie-house"));
+  const houseShadow = groundShadow({ width: 11, depth: 10, opacity: 0.3 });
+  houseShadow.position.set(group.position.x, 0.026, group.position.z);
+  scene.add(houseShadow);
 
   /* garden bed in front: ridged soil with pechay and talong set out in rows */
   const garden = new THREE.Group();

@@ -152,27 +152,76 @@ house read as one:
 ## Looking at the build without a browser
 
 There is no Chromium or WebGL in this environment, so `tools/preview.mjs`
-rasterises the real scene to PNG in software (z-buffer, near-plane clipping, flat
-shading, vertex colours; no textures, shadows or fog) and hands the result to
-ImageMagick:
+rasterises the real scene to PNG in software: z-buffer, near-plane clipping,
+perspective-correct UVs, **texture sampling**, instanced meshes and vertex
+colours. Shadows, fog and the sky shader are still missing, and shading is a
+single directional term, so it judges *form, scale and material*, not the final
+light.
 
 ```bash
 node tools/preview.mjs house       # preview-house.png
 node tools/preview.mjs street      # preview-street.png
-node tools/preview.mjs hall       # the hall on its own
-node tools/preview.mjs forecourt  # the hall as the grove opens up
-node tools/preview.mjs porch      # Ernie's porch
+node tools/preview.mjs hall        # the hall on its own
+node tools/preview.mjs forecourt   # the hall as the grove opens up
+node tools/preview.mjs porch       # Ernie's porch
 node tools/preview.mjs store
+node tools/preview.mjs garden
 node tools/preview.mjs mountains
 node tools/preview.mjs all
 ```
 
+Textures only appear if the optional `@napi-rs/canvas` package is installed
+(dev-only, not a dependency of the game):
+
+```bash
+npm i --no-save @napi-rs/canvas
+```
+
+`PREVIEW_SS=1` renders without the default 2x2 supersampling, which is twice as
+fast and half as legible. `node tools/dumptex.mjs plaster:3 "roadBed:0.3:768"`
+writes a single procedural texture to `/tmp` so it can be inspected on its own —
+that is how the "bubble wrap" plaster and the rib-on-rib roof moiré were found.
+
 The PNGs are gitignored — regenerate them whenever the modelling changes.
+
+## Realism pass
+
+The place was legible but it read as cardboard: flat maps, a road laid on the
+ground as a rectangle, and black holes for windows. What changed:
+
+- **the road is one corridor, not a strip plus shoulders.** `roadBed()` in
+  `textures.js` draws the running surface *and* both verges into a single tile —
+  wheel ruts (two thirds of a lane apart), a pale worn crown, gravel, and edges
+  that wander and break into clods before fading into the grass tone. The
+  separate shoulder planes are gone, so there is no polygon edge left to see.
+  The mesh is crowned and slightly rutted, ~3.2 m of ground per texture tile.
+- **contact shadows.** `groundShadow()` bakes a radial AO smudge under every
+  house, the store, Ernie's place and the hall — the thing that stops buildings
+  looking pasted onto the ground.
+- **normal maps.** `noiseNormal()` turns tileable value noise into a tangent-space
+  normal map (no sRGB decode), applied to grass, road, verges and plaster.
+- **corrugated iron is geometry, not a texture.** The sheets are modelled
+  rib-by-rib; the map now carries only weathering — chalky oxidation, panel laps
+  and rust bleeding down the slope. Painting ribs into the map as well put a
+  second frequency a few millimetres off the modelled one, which is what made
+  the old roofs swirl with moiré.
+- **plaster is stucco**, not overlapping translucent circles: fine grit, soft
+  tone drift, faint trowel sweeps, hairline cracks and a little grime.
+- **glazing reflects the sky.** A baked pane texture (bright at the top, dark at
+  the bottom, one diagonal glare) instead of an opaque dark material with no
+  environment map to reflect.
+- **weeds, 11 000 of them**, as real blade clumps in one instanced draw call:
+  short, thin, a third of them dry, crowded against the road edge and thinning
+  out across the verge.
+- **signs fit their boards.** `sign()` measures its lettering and shrinks it until
+  the longest line clears the border (the balcony sign used to read "ARANGAY
+  KABUDOC").
 
 ## What is actually implemented
 
-- Terrain, dirt road with shoulders, rice paddies with planted rows and bunds, a
-  cornfield, hills and mountains, drifting clouds, stars at night.
+- Terrain, a crowned dirt road corridor with baked verges and 11 000 instanced
+  weeds, rice paddies with planted rows and bunds, a cornfield, hills and
+  mountains, drifting clouds, stars at night.
 - **The extended approach**: the hall now sits at `z = -280`, ~2× the previous
   140 m, at the end of a seamless road. Roughly 300 puno ng saging line both
   shoulders the whole way, with deeper groves behind them, three plant variants
@@ -237,6 +286,7 @@ resources/game-dev-toolkit/
     sound.js                          recorded effects (CC BY 4.0) + synth fallback, radio
   walkthrough-test.mjs                 headless route test (no browser needed)
   tools/preview.mjs                    software renderer: scene -> PNG, no GPU
+  tools/dumptex.mjs                    one procedural texture -> PNG, for inspection
   tools/fetch-oculus-audio.mjs        re-downloads the 57 vendored sound effects
   assets/audio/oculus/                57 Ogg recordings, LICENSE (CC BY 4.0), MANIFEST.json
   assets/characters/cc0/              models, animations, catalogs, licences

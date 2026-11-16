@@ -30,6 +30,7 @@ import {
   jar,
   pottedPlant,
   shrub,
+  groundShadow,
   clothesline,
   bambooFence,
   horizonTerrain,
@@ -439,7 +440,7 @@ export function buildHouse(opts = {}) {
   const roofMat =
     roof === "nipa"
       ? new THREE.MeshStandardMaterial({ map: TEX.nipa(3), roughness: 0.95 })
-      : new THREE.MeshStandardMaterial({ map: TEX.corrugated(4), roughness: 0.68, metalness: 0.16 });
+      : new THREE.MeshStandardMaterial({ map: TEX.corrugated(1), roughness: 0.68, metalness: 0.16 });
   const concMat = new THREE.MeshStandardMaterial({ map: TEX.concrete(2), roughness: 1 });
 
   /* foundation: plinth, or posts under a raised floor */
@@ -757,7 +758,7 @@ function buildHall(scene, colliders) {
   const postMat = new THREE.MeshStandardMaterial({ color: 0xe9e3d4, roughness: 0.85 });
   const frameColor = 0x30343a;
   const roofMat = new THREE.MeshStandardMaterial({
-    map: TEX.corrugated(6, "#8a968f"),
+    map: TEX.corrugated(1, "#8a968f"),
     roughness: 0.68,
     metalness: 0.18,
   });
@@ -1101,6 +1102,10 @@ function buildHall(scene, colliders) {
 
   mergeStaticGroup(group);
   scene.add(group);
+  const hallShadow = groundShadow({ width: W + 6, depth: D + 6, opacity: 0.3 });
+  // above the lawn plane at 0.03, or the smudge is hidden under the grass
+  hallShadow.position.set(0, 0.045, hallZ);
+  scene.add(hallShadow);
 
   group.userData.hall = {
     width: W,
@@ -1221,30 +1226,53 @@ export function buildWorld(scene, opts = {}) {
   scene.add(sky);
 
   /* ground: a disc that meets the terrain ring exactly at its inner radius */
-  const groundMat = new THREE.MeshStandardMaterial({ map: TEX.grass(90), color: 0xc9c7a4, roughness: 1 });
+  const groundMat = new THREE.MeshStandardMaterial({
+    map: TEX.grass(90),
+    normalMap: TEX.noiseNormal({ repeat: 90, strength: 0.9, scale: 40, seed: 5 }),
+    normalScale: new THREE.Vector2(0.55, 0.55),
+    color: 0xc9c7a4,
+    roughness: 1,
+  });
   const ground = new THREE.Mesh(new THREE.CircleGeometry(LAYOUT.groundRadius, 96), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(0, 0, LAYOUT.groundCenterZ);
   ground.receiveShadow = true;
   scene.add(ground);
 
-  /* road + shoulders */
+  /* road corridor: one texture across the whole width, verges baked in */
   const roadLength = LAYOUT.roadStartZ - LAYOUT.roadEndZ;
-  const roadMat = new THREE.MeshStandardMaterial({ map: TEX.dirtRoad(1), roughness: 1 });
-  roadMat.map.repeat.set(1.6, roadLength / 6);
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(LAYOUT.roadWidth, roadLength), roadMat);
+  const VERGE = 2.6;
+  const corridorW = LAYOUT.roadWidth + VERGE * 2;
+  const vergeFrac = VERGE / corridorW;
+  const roadMat = new THREE.MeshStandardMaterial({
+    map: TEX.roadBed({ verge: vergeFrac, seed: 21 }),
+    normalMap: TEX.noiseNormal({ repeat: 1, strength: 1.6, scale: 30, seed: 9 }),
+    normalScale: new THREE.Vector2(0.55, 0.55),
+    roughness: 1,
+  });
+  // one tile across the corridor, ~3.2 m of ground per tile along it: any
+  // shorter and the ruts strobe, any longer and they smear into cardboard
+  roadMat.map.repeat.set(1, roadLength / 3.2);
+  roadMat.normalMap.repeat.set(corridorW / 3.4, roadLength / 3.4);
+  // a crowned, slightly rutted surface, with enough length segments that the
+  // light does not slide over a dead-flat plane
+  const roadGeo = new THREE.PlaneGeometry(corridorW, roadLength, 10, Math.round(roadLength / 3.5));
+  const rp = roadGeo.attributes.position;
+  for (let i = 0; i < rp.count; i++) {
+    const x = rp.getX(i);
+    const half = corridorW / 2;
+    const inn = Math.max(0, 1 - Math.abs(x) / (LAYOUT.roadWidth / 2));
+    const z = rp.getY(i);
+    const rut = Math.exp(-Math.pow((Math.abs(x) - LAYOUT.roadWidth * 0.2) / 0.34, 2)) * 0.016;
+    rp.setZ(i, inn * 0.06 + Math.sin(z * 0.27) * 0.02 - rut + Math.sin(x * 1.7 + z * 0.5) * 0.008);
+  }
+  roadGeo.computeVertexNormals();
+  const road = new THREE.Mesh(roadGeo, roadMat);
   road.rotation.x = -Math.PI / 2;
   road.position.set(0, 0.02, (LAYOUT.roadStartZ + LAYOUT.roadEndZ) / 2);
   road.receiveShadow = true;
+  road.name = "road";
   scene.add(road);
-  const shoulderMat = new THREE.MeshStandardMaterial({ map: TEX.mud(), color: 0xb9a98c, roughness: 1 });
-  for (const side of [-1, 1]) {
-    const shoulder = new THREE.Mesh(new THREE.PlaneGeometry(2.6, roadLength), shoulderMat);
-    shoulder.rotation.x = -Math.PI / 2;
-    shoulder.position.set(side * (LAYOUT.roadWidth / 2 + 1.2), 0.012, road.position.z);
-    shoulder.receiveShadow = true;
-    scene.add(shoulder);
-  }
 
   const groveCount = buildGrove(scene, colliders);
   const fields = buildFields(scene);
@@ -1253,6 +1281,7 @@ export function buildWorld(scene, opts = {}) {
 
   /* houses along the road */
   const houses = [];
+  const houseRects = [];
   const houseSeeds = [
     { z: -58, side: -1, w: 7.6, d: 6.2, storeys: 1, roof: "corrugated", wall: 0xd6cfbe, porch: true },
     { z: -86, side: 1, w: 6.8, d: 5.8, storeys: 1, roof: "nipa", wall: 0xcfc4a8, stilted: true },
@@ -1281,7 +1310,78 @@ export function buildWorld(scene, opts = {}) {
     group.rotation.y = h.side < 0 ? Math.PI / 2 : -Math.PI / 2;
     scene.add(group);
     colliders.push(...placeColliders(localColliders, group, "house"));
+    const shadow = groundShadow({ width: h.w + 4, depth: h.d + 4, opacity: 0.3 });
+    shadow.position.set(x, 0.026, h.z);
+    scene.add(shadow);
+    houseRects.push({ x, z: h.z, hx: h.d / 2 + 2.4, hz: h.w / 2 + 2.4 });
     houses.push({ group, glass });
+  }
+
+
+  /* weeds: real blade clumps crowding the verge, in one instanced draw call.
+     Bare dirt running straight into mown-looking grass is the single biggest
+     tell that a road is a texture rather than a road. */
+  {
+    const rects = [
+      ...houseRects,
+      { x: 11.5, z: -8, hx: 7, hz: 7 }, // store + Ernie's lot
+      { x: 0, z: LAYOUT.hallZ, hx: 21, hz: 19 }, // hall plinth, steps, lawn
+    ];
+    const blocked = (x, z) => rects.some((b) => Math.abs(x - b.x) < b.hx && Math.abs(z - b.z) < b.hz);
+    let seed = 91733;
+    const wr = () => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+    const spots = [];
+    const halfRoad = LAYOUT.roadWidth / 2;
+    let guard = 0;
+    while (spots.length < 11000 && guard++ < 200000) {
+      const alongVerge = wr() < 0.82;
+      const side = wr() < 0.5 ? -1 : 1;
+      let x;
+      let z;
+      if (alongVerge) {
+        // crowded against the road edge, thinning out across the verge
+        x = side * (halfRoad - 0.15 + Math.pow(wr(), 2.1) * 7.5);
+        z = LAYOUT.roadEndZ - 6 + wr() * (LAYOUT.roadStartZ - LAYOUT.roadEndZ + 40);
+      } else {
+        x = (wr() - 0.5) * 130;
+        z = LAYOUT.roadEndZ + 10 + wr() * (LAYOUT.roadStartZ - LAYOUT.roadEndZ + 30);
+      }
+      if (Math.abs(x) < halfRoad - 0.2) continue;
+      if (blocked(x, z)) continue;
+      const big = wr() < 0.09;
+      spots.push({
+        x,
+        z,
+        s: big ? 1.25 + wr() * 0.5 : 0.5 + wr() * 0.6,
+        rot: wr() * 6.28,
+        dry: wr() < 0.4,
+        lean: (wr() - 0.5) * 0.22,
+      });
+    }
+    // short, thin, half-dead verge growth -- the first pass was the size of a
+    // houseplant, which is what made the roadside read as planted rather than wild
+    const geo = bladeClump(5, { length: 0.21, width: 0.026, curve: 0.6, rise: 0.95, fold: 0.25, segsL: 3, segsW: 1 }, 731);
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, side: THREE.DoubleSide });
+    const weeds = new THREE.InstancedMesh(geo, mat, spots.length);
+    const dummy = new THREE.Object3D();
+    const green = new THREE.Color(0x76803f);
+    const straw = new THREE.Color(0xa89a63);
+    spots.forEach((p, i) => {
+      dummy.position.set(p.x, 0.022, p.z);
+      dummy.rotation.set(p.lean, p.rot, p.lean * 0.6);
+      dummy.scale.set(p.s, p.s * (0.8 + (i % 7) * 0.06), p.s);
+      dummy.updateMatrix();
+      weeds.setMatrixAt(i, dummy.matrix);
+      weeds.setColorAt(i, p.dry ? straw : green);
+    });
+    weeds.instanceMatrix.needsUpdate = true;
+    if (weeds.instanceColor) weeds.instanceColor.needsUpdate = true;
+    weeds.receiveShadow = true;
+    weeds.castShadow = false;
+    scene.add(weeds);
   }
 
   /* lights */

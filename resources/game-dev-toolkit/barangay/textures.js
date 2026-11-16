@@ -36,17 +36,88 @@ function rnd(seed) {
   };
 }
 
-function speckle(ctx, size, count, colors, rmin, rmax, seed) {
+function speckle(ctx, size, count, colors, rmin, rmax, seed, x0 = 0, window = null) {
   const r = rnd(seed);
+  const width = window ?? size;
   for (let i = 0; i < count; i++) {
     ctx.fillStyle = colors[(r() * colors.length) | 0];
     ctx.globalAlpha = 0.06 + r() * 0.3;
     const rad = rmin + r() * (rmax - rmin);
     ctx.beginPath();
-    ctx.ellipse(r() * size, r() * size, rad, rad * (0.5 + r()), r() * 6.28, 0, 6.28);
+    ctx.ellipse(x0 + r() * width, r() * size, rad, rad * (0.5 + r()), r() * 6.28, 0, 6.28);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+}
+
+/**
+ * A tiling bump map made from value noise, for the surfaces that are only flat
+ * colour right now. Grass, dirt and plaster all read as painted cardboard
+ * without one — a normal map is the cheapest realism there is.
+ */
+export function noiseNormal({ repeat = 1, strength = 1.2, scale = 48, seed = 1, octaves = 4 } = {}) {
+  const key = `normal:${repeat}:${strength}:${scale}:${seed}:${octaves}`;
+  if (cache.has(key)) return cache.get(key);
+
+  const size = 256;
+  const { c, ctx } = canvas(size);
+  const r = rnd(seed);
+  // value noise laid down at a few scales
+  const fields = [];
+  for (let o = 0; o < octaves; o++) {
+    const step = Math.max(2, Math.round(scale / Math.pow(2, o)));
+    const grid = Math.ceil(size / step) + 1;
+    const points = [];
+    for (let i = 0; i < grid * grid; i++) points.push(r());
+    fields.push({ step, grid, points });
+  }
+  const smooth = (t) => t * t * (3 - 2 * t);
+  const sample = (f, x, y) => {
+    const gx = x / f.step;
+    const gy = y / f.step;
+    const x0 = Math.floor(gx) % f.grid;
+    const y0 = Math.floor(gy) % f.grid;
+    const x1 = (x0 + 1) % f.grid;
+    const y1 = (y0 + 1) % f.grid;
+    const tx = smooth(gx - Math.floor(gx));
+    const ty = smooth(gy - Math.floor(gy));
+    const a = f.points[y0 * f.grid + x0] * (1 - tx) + f.points[y0 * f.grid + x1] * tx;
+    const b = f.points[y1 * f.grid + x0] * (1 - tx) + f.points[y1 * f.grid + x1] * tx;
+    return a * (1 - ty) + b * ty;
+  };
+  const height = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let h = 0;
+      let amp = 1;
+      let norm = 0;
+      for (const f of fields) {
+        h += sample(f, x, y) * amp;
+        norm += amp;
+        amp *= 0.55;
+      }
+      height[y * size + x] = h / norm;
+    }
+  }
+  const img = ctx.createImageData(size, size);
+  const at = (x, y) => height[(((y + size) % size) * size) + ((x + size) % size)];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * strength * 8;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * strength * 8;
+      // normal = normalize(-dx, -dy, 1) packed into RGB
+      const len = Math.hypot(dx, dy, 1);
+      const i = (y * size + x) * 4;
+      img.data[i] = ((-dx / len) * 0.5 + 0.5) * 255;
+      img.data[i + 1] = ((-dy / len) * 0.5 + 0.5) * 255;
+      img.data[i + 2] = ((1 / len) * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = finish(c, repeat, false);
+  cache.set(key, tex);
+  return tex;
 }
 
 export function grass(repeat = 26) {
@@ -109,35 +180,281 @@ export function dirtRoad(repeat = 1) {
   return tex;
 }
 
+/**
+ * The whole road corridor in one tile: packed clay with wheel ruts, broken up
+ * by an irregular dusty verge on either side that fades into the grass colour.
+ * Baking the transition into the texture is what stops the road reading as a
+ * rectangle laid on the ground -- the polygon edge is no longer visible.
+ *
+ * U spans the corridor (road + verge), V tiles along its length.
+ */
+export function roadBed({ verge = 0.3, size = 768, seed = 21 } = {}) {
+  const key = `roadbed:${verge}:${size}:${seed}`;
+  if (cache.has(key)) return cache.get(key);
+  const { c, ctx } = canvas(size);
+  const r = rnd(seed);
+  const left = size * verge;
+  const right = size - left;
+  const bandW = right - left;
+  const TAU = Math.PI * 2;
+  // Any noise that runs along V has to close at the tile seam, so its
+  // frequencies are whole cycles per tile.
+  const wave = (y, k, amp, phase = 0) => Math.sin((y / size) * TAU * k + phase) * amp;
+
+  /* ---- verge: dry, trampled ground with grass crowding in from outside ---- */
+  ctx.fillStyle = "#8f8468";
+  ctx.fillRect(0, 0, size, size);
+  speckle(ctx, size, 1200, ["#9a8f72", "#82755c", "#a89c7c", "#776b52"], 2, 16, seed + 1);
+
+  // grass: fine upright strokes, denser toward the outer edge
+  for (let i = 0; i < 5200; i++) {
+    const side = r() < 0.5 ? 0 : 1;
+    const t = Math.pow(r(), 1.5);
+    const x = side === 0 ? t * left : size - t * left;
+    const y = r() * size;
+    const len = 3 + r() * 9;
+    ctx.strokeStyle = ["#7d8552", "#6c7847", "#8f9158", "#5d6a41", "#87834f"][(r() * 5) | 0];
+    ctx.globalAlpha = 0.3 + r() * 0.55 * (1 - t * 0.4);
+    ctx.lineWidth = 0.9 + r() * 1.4;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (r() - 0.5) * 3, y - len);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  // greener toward the outside: the verge fades into unkempt grass
+  for (const [x0, dir] of [[0, 1], [size, -1]]) {
+    const g = ctx.createLinearGradient(x0, 0, x0 + dir * left * 0.7, 0);
+    g.addColorStop(0, "rgba(88,100,56,0.7)");
+    g.addColorStop(1, "rgba(88,100,56,0.05)");
+    ctx.fillStyle = g;
+    ctx.fillRect(Math.min(x0, x0 + dir * left * 0.7), 0, left * 0.7, size);
+  }
+  // bare, scuffed earth right where feet leave the road
+  for (const edge of [left, right]) {
+    const dir = edge === left ? 1 : -1;
+    const g = ctx.createLinearGradient(edge, 0, edge + dir * bandW * 0.16, 0);
+    g.addColorStop(0, "rgba(158,144,117,0.9)");
+    g.addColorStop(1, "rgba(158,144,117,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(Math.min(edge, edge + dir * bandW * 0.16), 0, bandW * 0.16, size);
+  }
+
+  /* ---- the running surface ---- */
+  const bandBase = "#8b7c61";
+  // build it in rows so both edges wander, and the wander closes at the seam
+  for (let y = 0; y < size; y += 1) {
+    const wobIn = wave(y, 3, 5) + wave(y, 7, 3, 1.1) + (r() - 0.5) * 2.2;
+    const wobOut = wave(y, 2, 6, 0.7) + wave(y, 9, 2.6, 2.3) + (r() - 0.5) * 2.2;
+    ctx.fillStyle = bandBase;
+    ctx.fillRect(left + wobIn, y, bandW - wobIn - wobOut, 1);
+  }
+  // tonal drift along the length, sealed at the seam
+  for (let i = 0; i < 900; i++) {
+    const x = left + r() * bandW;
+    const y = r() * size;
+    ctx.globalAlpha = 0.05 + r() * 0.16;
+    ctx.fillStyle = r() < 0.5 ? "#9c8e70" : "#77694f";
+    ctx.beginPath();
+    ctx.ellipse(x, y, 6 + r() * 30, 4 + r() * 22, r() * 3, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  speckle(ctx, size, 1500, ["#9a8862", "#7a6a4c", "#a69572", "#6b5c42"], 1.5, 14, seed + 2, left + 6, bandW - 12);
+
+  // wheel ruts: two thirds of a lane apart, soft-edged, with the compacted
+  // pale centre a wheel actually leaves
+  for (const f of [0.3, 0.7]) {
+    const x = left + bandW * f;
+    const g = ctx.createLinearGradient(x - 34, 0, x + 34, 0);
+    g.addColorStop(0, "rgba(84,70,48,0)");
+    g.addColorStop(0.32, "rgba(80,66,45,0.5)");
+    g.addColorStop(0.68, "rgba(80,66,45,0.5)");
+    g.addColorStop(1, "rgba(84,70,48,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(x - 34, 0, 68, size);
+    const inner = ctx.createLinearGradient(x - 12, 0, x + 12, 0);
+    inner.addColorStop(0, "rgba(160,146,116,0)");
+    inner.addColorStop(0.5, "rgba(160,146,116,0.35)");
+    inner.addColorStop(1, "rgba(160,146,116,0)");
+    ctx.fillStyle = inner;
+    ctx.fillRect(x - 12, 0, 24, size);
+  }
+  // pale, worn crown down the middle
+  const crown = ctx.createLinearGradient(left, 0, right, 0);
+  crown.addColorStop(0, "rgba(190,178,150,0)");
+  crown.addColorStop(0.5, "rgba(190,178,150,0.26)");
+  crown.addColorStop(1, "rgba(190,178,150,0)");
+  ctx.fillStyle = crown;
+  ctx.fillRect(left, 0, bandW, size);
+
+  // gravel, leaf litter, the odd damp patch
+  for (let i = 0; i < 340; i++) {
+    ctx.fillStyle = ["#b7a684", "#6b5a42", "#a08c62", "#585040"][(r() * 4) | 0];
+    ctx.globalAlpha = 0.3 + r() * 0.45;
+    ctx.beginPath();
+    ctx.arc(left + r() * bandW, r() * size, 0.7 + r() * 2.4, 0, TAU);
+    ctx.fill();
+  }
+  for (let i = 0; i < 18; i++) {
+    ctx.globalAlpha = 0.06 + r() * 0.1;
+    ctx.fillStyle = "#5c5140";
+    ctx.beginPath();
+    ctx.ellipse(left + r() * bandW, r() * size, 8 + r() * 26, 5 + r() * 16, r() * 3, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // clods and grass breaking the straight line of the band on both sides
+  for (const [edge, dir] of [[left, -1], [right, 1]]) {
+    for (let i = 0; i < 900; i++) {
+      const y = r() * size;
+      const rad = 1 + r() * 5.5;
+      const off = rad * (0.15 + r() * 1.5);
+      ctx.globalAlpha = 0.3 + r() * 0.5;
+      const pick = r();
+      ctx.fillStyle = pick < 0.5 ? bandBase : pick < 0.8 ? "#9e9075" : ["#7d8552", "#6c7847"][(r() * 2) | 0];
+      ctx.beginPath();
+      ctx.ellipse(edge + dir * off, y, rad, rad * (0.5 + r() * 1.1), r() * 3, 0, TAU);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // outermost few pixels fade to the grass tone so the plane's edge vanishes
+  for (const [x0, dir] of [[0, 1], [size, -1]]) {
+    const g = ctx.createLinearGradient(x0, 0, x0 + dir * size * 0.05, 0);
+    g.addColorStop(0, "rgba(118,126,84,0.9)");
+    g.addColorStop(0.55, "rgba(118,126,84,0.45)");
+    g.addColorStop(1, "rgba(118,126,84,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(Math.min(x0, x0 + dir * size * 0.05), 0, size * 0.05, size);
+  }
+
+  const tex = finish(c, 1);
+  cache.set(key, tex);
+  return tex;
+}
+
+/**
+ * Glazing. Without an environment map a "glass" material is just a black hole,
+ * which is what every window in the barangay looked like. This bakes the sky
+ * reflection -- bright at the top, dark at the bottom, one diagonal glare --
+ * so a pane reads as glass from any angle.
+ */
+export function glassPane() {
+  if (cache.has("glasspane")) return cache.get("glasspane");
+  const w = 256;
+  const h = 256;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, "#c3d6e6");
+  g.addColorStop(0.22, "#93aabb");
+  g.addColorStop(0.55, "#556a78");
+  g.addColorStop(0.82, "#2b3742");
+  g.addColorStop(1, "#1b232b");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+
+  // a soft diagonal glare, the way a flat pane catches the sky
+  ctx.save();
+  ctx.translate(w * 0.42, h * 0.42);
+  ctx.rotate(-0.6);
+  const gl = ctx.createLinearGradient(-90, 0, 90, 0);
+  gl.addColorStop(0, "rgba(255,255,255,0)");
+  gl.addColorStop(0.45, "rgba(255,255,255,0.34)");
+  gl.addColorStop(0.55, "rgba(255,255,255,0.12)");
+  gl.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = gl;
+  ctx.fillRect(-90, -200, 180, 400);
+  ctx.restore();
+
+  // the room behind, faintly, and dust settled at the bottom
+  const r = rnd(77);
+  for (let i = 0; i < 40; i++) {
+    ctx.globalAlpha = 0.04 + r() * 0.08;
+    ctx.fillStyle = "#0e1418";
+    ctx.beginPath();
+    ctx.ellipse(r() * w, h * 0.5 + r() * h * 0.5, 6 + r() * 26, 4 + r() * 16, r() * 3, 0, 6.28);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  cache.set("glasspane", tex);
+  return tex;
+}
+
 export function plaster(repeat = 4) {
   if (cache.has("plaster" + repeat)) return cache.get("plaster" + repeat);
   const size = 512;
   const { c, ctx } = canvas(size);
-  ctx.fillStyle = "#d9d2c2";
+  ctx.fillStyle = "#dcd5c6";
   ctx.fillRect(0, 0, size, size);
-  speckle(ctx, size, 500, ["#cfc7b5", "#e4ddcd", "#c4bba6", "#b8ae99"], 4, 26, 31);
-  // water stains near the bottom
-  const g = ctx.createLinearGradient(0, size * 0.62, 0, size);
-  g.addColorStop(0, "rgba(120,110,92,0)");
-  g.addColorStop(1, "rgba(120,110,92,0.35)");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, size * 0.62, size, size * 0.38);
-  // hairline cracks
-  const r = rnd(44);
-  ctx.strokeStyle = "rgba(120,112,96,0.5)";
-  for (let i = 0; i < 12; i++) {
-    ctx.lineWidth = 0.6;
+  const r = rnd(31);
+
+  // tone drift: broad, very soft gradients. Hard-edged blobs read as bubbles,
+  // which is exactly what the first pass looked like on the hall wall.
+  for (let i = 0; i < 14; i++) {
+    const x = r() * size;
+    const y = r() * size;
+    const rad = 70 + r() * 150;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+    const dark = r() < 0.5;
+    g.addColorStop(0, dark ? "rgba(186,178,160,0.16)" : "rgba(246,242,232,0.20)");
+    g.addColorStop(1, "rgba(220,213,198,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+
+  // stucco grit: dense, tiny, low contrast
+  speckle(ctx, size, 5200, ["#d2cab8", "#e7e1d3", "#c6bda9", "#efeade"], 0.5, 2.4, 61);
+
+  // trowel sweeps, barely there
+  for (let i = 0; i < 18; i++) {
+    ctx.lineWidth = 16 + r() * 16;
+    ctx.strokeStyle = r() < 0.5 ? "rgba(255,255,255,0.028)" : "rgba(150,142,124,0.022)";
+    ctx.beginPath();
+    const x = r() * size;
+    const y = r() * size;
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + 40 + r() * 80, y + (r() - 0.5) * 60, x + 90 + r() * 130, y + (r() - 0.5) * 40);
+    ctx.stroke();
+  }
+
+  // grime gathering at the bottom of the wall
+  const grime = ctx.createLinearGradient(0, size * 0.6, 0, size);
+  grime.addColorStop(0, "rgba(118,110,92,0)");
+  grime.addColorStop(1, "rgba(118,110,92,0.1)");
+  ctx.fillStyle = grime;
+  ctx.fillRect(0, size * 0.6, size, size * 0.4);
+
+  // a few hairline cracks and the odd chipped patch
+  ctx.strokeStyle = "rgba(128,120,104,0.4)";
+  for (let i = 0; i < 7; i++) {
+    ctx.lineWidth = 0.5 + r() * 0.5;
     ctx.beginPath();
     let x = r() * size;
     let y = r() * size;
     ctx.moveTo(x, y);
-    for (let s = 0; s < 6; s++) {
-      x += (r() - 0.5) * 40;
-      y += r() * 26;
+    for (let step = 0; step < 7; step++) {
+      x += (r() - 0.5) * 34;
+      y += 12 + r() * 20;
       ctx.lineTo(x, y);
     }
     ctx.stroke();
   }
+  for (let i = 0; i < 9; i++) {
+    ctx.fillStyle = r() < 0.5 ? "rgba(196,186,166,0.5)" : "rgba(232,226,214,0.5)";
+    ctx.beginPath();
+    ctx.ellipse(r() * size, r() * size, 1.5 + r() * 5, 1 + r() * 3.5, r() * 3, 0, 6.28);
+    ctx.fill();
+  }
+
   const tex = finish(c, repeat);
   cache.set("plaster" + repeat, tex);
   return tex;
@@ -186,33 +503,60 @@ export function wood(repeat = 2, tone = "#8a6a44") {
   return tex;
 }
 
-export function corrugated(repeat = 6, tone = "#9aa0a2") {
+export function corrugated(repeat = 1, tone = "#9aa0a2") {
   const key = `corr${repeat}${tone}`;
   if (cache.has(key)) return cache.get(key);
   const size = 512;
   const { c, ctx } = canvas(size);
   ctx.fillStyle = tone;
   ctx.fillRect(0, 0, size, size);
-  // vertical ribs
-  const ribs = 26;
-  for (let i = 0; i < ribs; i++) {
-    const x = (i * size) / ribs;
-    const g = ctx.createLinearGradient(x, 0, x + size / ribs, 0);
-    g.addColorStop(0, "rgba(0,0,0,0.22)");
-    g.addColorStop(0.45, "rgba(255,255,255,0.16)");
-    g.addColorStop(0.55, "rgba(255,255,255,0.10)");
-    g.addColorStop(1, "rgba(0,0,0,0.26)");
-    ctx.fillStyle = g;
-    ctx.fillRect(x, 0, size / ribs, size);
-  }
-  // rust blooms
   const r = rnd(91);
-  for (let i = 0; i < 90; i++) {
-    ctx.fillStyle = `rgba(${120 + r() * 40},${60 + r() * 30},${30 + r() * 20},${0.05 + r() * 0.25})`;
+  // The ribs themselves are geometry (corrugatedSlab models them), so the map
+  // carries weathering only. Painting ribs here as well put a second frequency
+  // a few millimetres off the modelled ones and produced that swirling moire.
+  // What old GI sheet really looks like: chalky oxidation, panel laps every
+  // sheet, and rust bleeding down the slope from every lap and fastener.
+  speckle(ctx, size, 260, ["#a9aeac", "#878d8a", "#b3b6ae", "#6f7671"], 8, 46, 17);
+
+  // panel laps: two seams per tile, running down the slope
+  for (let i = 0; i < 2; i++) {
+    const x = (i + 0.5) * (size / 2);
+    const lap = ctx.createLinearGradient(x - 5, 0, x + 7, 0);
+    lap.addColorStop(0, "rgba(45,48,46,0.42)");
+    lap.addColorStop(0.6, "rgba(70,74,70,0.18)");
+    lap.addColorStop(1, "rgba(150,154,148,0.10)");
+    ctx.fillStyle = lap;
+    ctx.fillRect(x - 5, 0, 12, size);
+  }
+
+  // rust streaks: long, thin, running downhill from the laps
+  for (let i = 0; i < 46; i++) {
+    const x = r() * size;
+    const len = 40 + r() * (size * 0.9);
+    const y0 = r() * size * 0.7;
+    const g = ctx.createLinearGradient(0, y0, 0, y0 + len);
+    const a = 0.1 + r() * 0.3;
+    g.addColorStop(0, `rgba(${110 + r() * 40},${58 + r() * 26},${28 + r() * 18},${a})`);
+    g.addColorStop(1, `rgba(${104 + r() * 30},${54 + r() * 20},${26 + r() * 16},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(x, y0, 2 + r() * 7, len);
+  }
+  // rust blooms and pits
+  for (let i = 0; i < 70; i++) {
+    ctx.fillStyle = `rgba(${118 + r() * 42},${58 + r() * 30},${28 + r() * 20},${0.06 + r() * 0.24})`;
     ctx.beginPath();
-    ctx.ellipse(r() * size, r() * size, 3 + r() * 22, 2 + r() * 12, r() * 3, 0, 6.28);
+    ctx.ellipse(r() * size, r() * size, 3 + r() * 20, 2 + r() * 11, r() * 3, 0, 6.28);
     ctx.fill();
   }
+  // grey chalky bloom over the top, so it is not uniformly rusty
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = "#c7c9c1";
+  for (let i = 0; i < 26; i++) {
+    ctx.beginPath();
+    ctx.ellipse(r() * size, r() * size, 20 + r() * 70, 14 + r() * 50, r() * 3, 0, 6.28);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
   const tex = finish(c, repeat);
   cache.set(key, tex);
   return tex;
@@ -286,7 +630,16 @@ export function sign(text, opts = {}) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const lines = text.split("\n");
-  const size = opts.size ?? Math.min(120, (h * 0.62) / lines.length);
+  let size = opts.size ?? Math.min(120, (h * 0.62) / lines.length);
+  // never let the lettering run off the board: measure and shrink until the
+  // longest line fits inside the border
+  const maxW = w - 90;
+  for (let pass = 0; pass < 6; pass++) {
+    ctx.font = `700 ${size}px "Trebuchet MS", "DejaVu Sans", sans-serif`;
+    const widest = Math.max(...lines.map((line) => ctx.measureText(line).width));
+    if (!Number.isFinite(widest) || widest <= maxW) break;
+    size = Math.max(18, Math.floor((size * maxW) / widest) - 1);
+  }
   ctx.font = `700 ${size}px "Trebuchet MS", "DejaVu Sans", sans-serif`;
   lines.forEach((line, i) => {
     const y = h / 2 + (i - (lines.length - 1) / 2) * size * 1.15;

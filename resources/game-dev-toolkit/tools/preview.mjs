@@ -22,7 +22,20 @@
 import { writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
-/* ---------------------------------------------------------------- canvas stub */
+/* ------------------------------------------------------------------- canvas
+ * Optional: if @napi-rs/canvas is installed we rasterise with the real
+ * procedural textures instead of flat material colours. It is a dev-only,
+ * best-effort dependency (install it with `npm i --no-save @napi-rs/canvas`);
+ * without it the preview still renders, just untextured.
+ */
+const CANVAS = await (async () => {
+  try {
+    return await import("@napi-rs/canvas");
+  } catch {
+    return null;
+  }
+})();
+
 const gradient = { addColorStop() {} };
 const ctx2d = new Proxy(
   {},
@@ -31,6 +44,8 @@ const ctx2d = new Proxy(
       if (key === "createLinearGradient" || key === "createRadialGradient") return () => gradient;
       if (key === "canvas") return { width: 512, height: 512 };
       if (key === "measureText") return () => ({ width: 10 });
+      if (key === "createImageData") return (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) });
+      if (key === "getImageData") return (x, y, w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) });
       return () => {};
     },
     set() {
@@ -38,15 +53,89 @@ const ctx2d = new Proxy(
     },
   }
 );
-globalThis.document = { createElement: () => ({ width: 512, height: 512, getContext: () => ctx2d }) };
+
+globalThis.document = {
+  createElement: (tag) => {
+    if (CANVAS && (tag === "canvas" || !tag)) return CANVAS.createCanvas(512, 512);
+    return { width: 512, height: 512, getContext: () => ctx2d };
+  },
+};
+
+/** Pull a texture's pixels once, so the rasteriser can sample it per pixel. */
+const TEXDATA = new Map();
+function textureData(tex) {
+  if (!CANVAS || !tex || !tex.image) return null;
+  if (TEXDATA.has(tex.uuid)) return TEXDATA.get(tex.uuid);
+  let entry = null;
+  try {
+    const img = tex.image;
+    if (img.getContext) {
+      const ctx = img.getContext("2d");
+      const w = img.width;
+      const h = img.height;
+      const data = ctx.getImageData(0, 0, w, h).data;
+      entry = {
+        data,
+        w,
+        h,
+        flipY: tex.flipY !== false,
+        rx: tex.repeat ? tex.repeat.x : 1,
+        ry: tex.repeat ? tex.repeat.y : 1,
+        ox: tex.offset ? tex.offset.x : 0,
+        oy: tex.offset ? tex.offset.y : 0,
+        wrapS: tex.wrapS ?? 1000,
+        wrapT: tex.wrapT ?? 1000,
+      };
+    }
+  } catch {
+    entry = null;
+  }
+  TEXDATA.set(tex.uuid, entry);
+  return entry;
+}
+
+function wrapCoord(v, mode) {
+  if (mode === 1001) return Math.min(1, Math.max(0, v)); // ClampToEdge
+  return v - Math.floor(v);
+}
+
+/** Bilinear sample, in 0..1 sRGB byte space. */
+function sampleTexture(t, u, v, out) {
+  const su = wrapCoord(u * t.rx + t.ox, t.wrapS);
+  const sv = wrapCoord(v * t.ry + t.oy, t.wrapT);
+  let x = su * (t.w - 1);
+  let y = (t.flipY ? 1 - sv : sv) * (t.h - 1);
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const fx = x - x0;
+  const fy = y - y0;
+  const x1 = Math.min(t.w - 1, x0 + 1);
+  const y1 = Math.min(t.h - 1, y0 + 1);
+  const d = t.data;
+  const i00 = (y0 * t.w + x0) * 4;
+  const i10 = (y0 * t.w + x1) * 4;
+  const i01 = (y1 * t.w + x0) * 4;
+  const i11 = (y1 * t.w + x1) * 4;
+  for (let k = 0; k < 3; k++) {
+    const top = d[i00 + k] * (1 - fx) + d[i10 + k] * fx;
+    const bot = d[i01 + k] * (1 - fx) + d[i11 + k] * fx;
+    out[k] = (top * (1 - fy) + bot * fy) / 255;
+  }
+  const ta = d[i00 + 3] * (1 - fx) + d[i10 + 3] * fx;
+  const tb = d[i01 + 3] * (1 - fx) + d[i11 + 3] * fx;
+  out[3] = (ta * (1 - fy) + tb * fy) / 255;
+}
 
 const THREE = await import("three");
 const { buildWorld, buildHouse, buildHall, LAYOUT } = await import("../barangay/world.js");
 const { gardenBed } = await import("../barangay/models.js");
 const { createStore } = await import("../barangay/places.js");
 
-const W = 1100;
-const H = 680;
+// supersampled: the rasteriser has no mipmaps, so averaging 2x2 subsamples is
+// what makes fine texture detail (roof ribs, grass blades) legible at all
+const SS = Number(process.env.PREVIEW_SS ?? 2);
+const W = 1100 * SS;
+const H = 680 * SS;
 const LIGHT = new THREE.Vector3(0.45, 0.82, 0.36).normalize();
 
 /** Flat colour for a material, approximating what the map would have been. */
@@ -54,7 +143,7 @@ function materialColour(mat) {
   const c = new THREE.Color(1, 1, 1);
   if (!mat) return c;
   if (mat.color) c.copy(mat.color);
-  if (mat.map && c.r > 0.92 && c.g > 0.92 && c.b > 0.92) c.setHex(0xc9c1ad); // textured wall / roof sheet
+  if (mat.map && !CANVAS && c.r > 0.92 && c.g > 0.92 && c.b > 0.92) c.setHex(0xc9c1ad); // textured wall / roof sheet
   if (mat.emissive && mat.emissiveIntensity > 0) c.lerp(mat.emissive, 0.35);
   return c;
 }
@@ -93,6 +182,16 @@ function render(scene, camera, outPath) {
 
   scene.traverse((obj) => {
     if (!obj.isMesh || obj.isSkinnedMesh) return;
+    // instanced meshes (weeds, grove, rice, corn) are drawn once per instance
+    let instances = [null];
+    if (obj.isInstancedMesh && obj.count) {
+      instances = [];
+      const m = new THREE.Matrix4();
+      for (let i = 0; i < obj.count; i++) {
+        obj.getMatrixAt(i, m);
+        instances.push(m.clone());
+      }
+    }
     const geo = obj.geometry;
     const pos = geo.attributes?.position;
     if (!pos) return;
@@ -102,15 +201,30 @@ function render(scene, camera, outPath) {
     const base = materialColour(mat);
     // vertex colours matter on the terrain ring, which is all one material
     const vcol = mat.vertexColors ? geo.attributes.color : null;
+    const uvs = geo.attributes.uv ?? null;
+    const tdata = textureData(mat.map);
+    const texPixel = [0, 0, 0, 1];
+    const alphaBlend = !!mat.transparent && !!tdata;
     const triCount = index ? index.count / 3 : pos.count / 3;
+    const instCol = obj.isInstancedMesh && obj.instanceColor ? obj.instanceColor : null;
+
+    for (let inst = 0; inst < instances.length; inst++) {
+    const mw = instances[inst]
+      ? new THREE.Matrix4().multiplyMatrices(obj.matrixWorld, instances[inst])
+      : obj.matrixWorld;
+    if (instCol) {
+      const c = new THREE.Color();
+      c.fromBufferAttribute(instCol, inst);
+      base.copy(c);
+    }
 
     for (let t = 0; t < triCount; t++) {
       const ia = index ? index.getX(t * 3) : t * 3;
       const ib = index ? index.getX(t * 3 + 1) : t * 3 + 1;
       const ic = index ? index.getX(t * 3 + 2) : t * 3 + 2;
-      a.fromBufferAttribute(pos, ia).applyMatrix4(obj.matrixWorld);
-      b.fromBufferAttribute(pos, ib).applyMatrix4(obj.matrixWorld);
-      c.fromBufferAttribute(pos, ic).applyMatrix4(obj.matrixWorld);
+      a.fromBufferAttribute(pos, ia).applyMatrix4(mw);
+      b.fromBufferAttribute(pos, ib).applyMatrix4(mw);
+      c.fromBufferAttribute(pos, ic).applyMatrix4(mw);
 
       // face normal + a little two-sided shading
       e1.subVectors(b, a);
@@ -122,10 +236,12 @@ function render(scene, camera, outPath) {
 
       // camera space, then clip against the near plane. Without this the big
       // ground disc and the road vanish as soon as one corner passes the camera.
+      const uvAt = (i) =>
+        uvs ? { u: uvs.getX(i), v: uvs.getY(i) } : { u: 0, v: 0 };
       const verts = [
-        { world: a.clone(), view: a.clone().applyMatrix4(view) },
-        { world: b.clone(), view: b.clone().applyMatrix4(view) },
-        { world: c.clone(), view: c.clone().applyMatrix4(view) },
+        { world: a.clone(), view: a.clone().applyMatrix4(view), uv: uvAt(ia) },
+        { world: b.clone(), view: b.clone().applyMatrix4(view), uv: uvAt(ib) },
+        { world: c.clone(), view: c.clone().applyMatrix4(view), uv: uvAt(ic) },
       ];
       const near = -0.25;
       const poly = [];
@@ -140,16 +256,20 @@ function render(scene, camera, outPath) {
           poly.push({
             world: cur.world.clone().lerp(nxt.world, t),
             view: cur.view.clone().lerp(nxt.view, t),
+            uv: { u: cur.uv.u + (nxt.uv.u - cur.uv.u) * t, v: cur.uv.v + (nxt.uv.v - cur.uv.v) * t },
           });
         }
       }
       if (poly.length < 3) continue;
       const screen = poly.map((v) => {
         const pv = v.view.clone().applyMatrix4(proj);
+        const iz = 1 / -v.view.z;
         return {
           x: (pv.x * 0.5 + 0.5) * W,
           y: (0.5 - pv.y * 0.5) * H,
-          z: 1 / -v.view.z,
+          z: iz,
+          u: v.uv.u * iz,
+          vv: v.uv.v * iz,
         };
       });
 
@@ -179,6 +299,8 @@ function render(scene, camera, outPath) {
         if (Math.abs(area) < 1e-9) continue;
         const inv = 1 / area;
         const za = A.z, zb = B.z, zc = C.z;
+        const ua = A.u, ub = B.u, uc = C.u;
+        const va = A.vv, vb = B.vv, vc = C.vv;
       for (let y = minY; y <= maxY; y++) {
         for (let x = minX; x <= maxX; x++) {
           const px = x + 0.5;
@@ -192,15 +314,36 @@ function render(scene, camera, outPath) {
           const z = 1 / iz;
           const di = y * W + x;
           if (z >= depth[di]) continue;
-          depth[di] = z;
+          if (!alphaBlend) depth[di] = z;
           const ci = di * 3;
-          colour[ci] = rr;
-          colour[ci + 1] = gg;
-          colour[ci + 2] = bb;
+          if (tdata) {
+            const tu = (w0 * ua + w1 * ub + w2 * uc) * z;
+            const tv = (w0 * va + w1 * vb + w2 * vc) * z;
+            sampleTexture(tdata, tu, tv, texPixel);
+            const r0 = Math.min(255, cr * texPixel[0] * shade * 255);
+            const g0 = Math.min(255, cg * texPixel[1] * shade * 255);
+            const b0 = Math.min(255, cb * texPixel[2] * shade * 255);
+            if (alphaBlend) {
+              // contact shadows and other transparent decals: blend, no depth write
+              const al = texPixel[3] * (mat.opacity ?? 1);
+              colour[ci] = colour[ci] * (1 - al) + r0 * al;
+              colour[ci + 1] = colour[ci + 1] * (1 - al) + g0 * al;
+              colour[ci + 2] = colour[ci + 2] * (1 - al) + b0 * al;
+            } else {
+              colour[ci] = r0;
+              colour[ci + 1] = g0;
+              colour[ci + 2] = b0;
+            }
+          } else {
+            colour[ci] = rr;
+            colour[ci + 1] = gg;
+            colour[ci + 2] = bb;
+          }
         }
       }
       drawn++;
       }
+    }
     }
   });
 
@@ -208,7 +351,10 @@ function render(scene, camera, outPath) {
   const header = Buffer.from(`P6\n${W} ${H}\n255\n`, "latin1");
   const ppm = `/tmp/preview-${outPath.split("/").pop().replace(/\.png$/, "")}.ppm`;
   writeFileSync(ppm, Buffer.concat([header, Buffer.from(colour.buffer)]));
-  execFileSync("convert", [ppm, outPath]);
+  execFileSync(
+    "convert",
+    SS > 1 ? [ppm, "-filter", "box", "-resize", `${100 / SS}%`, outPath] : [ppm, outPath]
+  );
   console.log(`${outPath} — ${drawn} triangles rasterised`);
 }
 
@@ -348,7 +494,9 @@ if (which === "store" || which === "all") {
   const scene = new THREE.Scene();
   const world = buildWorld(scene, { startHour: 15 });
   await createStore(scene, world.colliders, null);
-  render(scene, cameraAt({ x: 4.2, y: 1.75, z: -1.2 }, { x: 10.4, y: 1.55, z: -6.0 }, 46), "preview-store.png");
+  // stand on the road, a little off the counter axis, so the open front and the
+  // shelves behind it both read
+  render(scene, cameraAt({ x: 3.2, y: 1.7, z: -2.2 }, { x: 10.5, y: 1.35, z: -6.9 }, 54), "preview-store.png");
   void world;
 }
 

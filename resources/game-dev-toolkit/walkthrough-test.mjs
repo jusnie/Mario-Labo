@@ -23,6 +23,8 @@ const ctx2d = new Proxy(
       if (key === "createLinearGradient" || key === "createRadialGradient") return () => gradient;
       if (key === "canvas") return { width: 512, height: 512 };
       if (key === "measureText") return () => ({ width: 10 });
+      if (key === "createImageData") return (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) });
+      if (key === "getImageData") return (x, y, w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) });
       return () => {};
     },
     set() {
