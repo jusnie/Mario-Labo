@@ -75,8 +75,12 @@ export function updatePalette(target, hours) {
   // golden hour: a narrow window around the sun touching the horizon
   // the glow only exists while the sun is close to the horizon: twelve degrees
   // below it there is no warm band left, just deep blue
+  // Civil twilight is not night: for the twenty minutes after the sun goes
+  // down the west still glows and that is when the village is at its most
+  // legible. The window now reaches twenty degrees below the horizon, and it
+  // fades out rather than snapping.
   const gold =
-    Math.exp(-Math.pow((elev - 0.06) / 0.22, 2)) * smoothstep(-0.22, -0.02, elev);
+    Math.exp(-Math.pow((elev - 0.06) / 0.26, 2)) * smoothstep(-0.32, -0.02, elev);
   const lit = clamp01(elev * 3.2);
 
   mixInto(target.topColor.value, NIGHT_TOP, DAY_TOP, day);
@@ -98,6 +102,8 @@ export function updatePalette(target, hours) {
     day,
     night,
     gold,
+    // how much of the twilight sky is still lighting the ground
+    duskFill: smoothstep(-0.34, 0.02, elev) * (1 - day),
     elev,
     top: target.topColor.value,
     horizon: target.horizonColor.value,

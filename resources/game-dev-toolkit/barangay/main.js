@@ -513,6 +513,7 @@ async function boot() {
 
     // --- world + characters
     world3d.update(dt, camera.position);
+    renderer.toneMappingExposure = world3d.exposure ?? 1.05;
     store.update(dt);
     audio.setNight(1 - world3d.clock.daylight);
     audio.setDaylight(world3d.clock.daylight);

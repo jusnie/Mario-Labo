@@ -142,7 +142,7 @@ const LIGHT = new THREE.Vector3(0.45, 0.82, 0.36).normalize();
 const acesOne = (x) => Math.min(1, Math.max(0, (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14)));
 const encodeSRGB = (v) => Math.pow(Math.min(1, Math.max(0, v)), 1 / 2.2);
 const toLinear = (v) => Math.pow(v, 2.2);
-const EXPOSURE = Number(process.env.PREVIEW_EXPOSURE ?? 1.05);
+let EXPOSURE = Number(process.env.PREVIEW_EXPOSURE ?? 1.05);
 
 /**
  * The scene's own lights, so previews are exposed the way the game exposes
@@ -215,6 +215,7 @@ function render(scene, camera, outPath) {
   // pixel through the camera basis. `skyHour` picks the time of day.
   const skyU = createSkyUniforms();
   updatePalette(skyU, skyHour);
+  skyU.exposure.value = EXPOSURE;
   const tanHalf = Math.tan((camera.fov * Math.PI) / 180 / 2);
   const aspect = W / H;
   const basis = new THREE.Matrix4().extractRotation(camera.matrixWorld);
@@ -639,7 +640,8 @@ if (which === "garden" || which === "all") {
 
 if (which === "street" || which === "all") {
   const scene = new THREE.Scene();
-  const world = buildWorld(scene, { startHour: 15 });
+  const world = buildWorld(scene, { startHour: skyHour });
+  EXPOSURE = world.exposure ?? EXPOSURE;
   render(
     scene,
     cameraAt({ x: 3.0, y: 1.75, z: -34 }, { x: 0.5, y: 6, z: -150 }),
@@ -702,7 +704,8 @@ if (which === "hallwing" || which === "all") {
 
 if (which === "store" || which === "all") {
   const scene = new THREE.Scene();
-  const world = buildWorld(scene, { startHour: 15 });
+  const world = buildWorld(scene, { startHour: skyHour });
+  EXPOSURE = world.exposure ?? EXPOSURE;
   await createStore(scene, world.colliders, null);
   // stand on the road, a little off the counter axis, so the open front and the
   // shelves behind it both read
@@ -713,7 +716,8 @@ if (which === "store" || which === "all") {
 if (which === "fields" || which === "all") {
   // eye height beside the paddy on the east side: the closest look at the crop
   const scene = new THREE.Scene();
-  const world = buildWorld(scene, { startHour: 15 });
+  const world = buildWorld(scene, { startHour: skyHour });
+  EXPOSURE = world.exposure ?? EXPOSURE;
   render(
     scene,
     cameraAt({ x: 22.5, y: 1.65, z: -80 }, { x: 36, y: 0.4, z: -104 }),
@@ -724,7 +728,8 @@ if (which === "fields" || which === "all") {
 
 if (which === "mountains" || which === "all") {
   const scene = new THREE.Scene();
-  const world = buildWorld(scene, { startHour: 15 });
+  const world = buildWorld(scene, { startHour: skyHour });
+  EXPOSURE = world.exposure ?? EXPOSURE;
   render(
     scene,
     cameraAt({ x: 0, y: 2.2, z: -60 }, { x: 40, y: 120, z: -700 }),

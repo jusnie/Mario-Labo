@@ -249,6 +249,11 @@ Textures only appear if the optional `@napi-rs/canvas` package is installed
 npm i --no-save @napi-rs/canvas
 ```
 
+`SKY_HOUR` drives the whole scene now, not just the sky: the world is built at
+that hour, so lights, fog, window glow and the exposure the eye adapts to all
+match the dome. Before this the sky could say 21:00 while the village was lit
+by 15:00 sun, which made every dusk and night judgement worthless.
+
 `PREVIEW_SS=1` renders without the default 2x2 supersampling, which is twice as
 fast and half as legible. `node tools/dumptex.mjs plaster:3 "roadBed:0.3:768"`
 writes a single procedural texture to `/tmp` so it can be inspected on its own —
@@ -316,6 +321,18 @@ reads as a diorama:
 - **the sari-sari curtain is stock, not bunting.** Rows of pouches on strings,
   each row a run of one or two brands, tinted foil-print packets (`packet()`)
   instead of twelve brightly coloured rectangles a metre apart.
+- **twilight lasts twenty minutes.** `gold` used to die the moment the sun
+  crossed the horizon, so 18:36 was already full night with a black sky. Civil
+  twilight now reaches twenty degrees below the horizon and keeps a warm band in
+  the west (`updatePalette` also returns `duskFill`, which feeds a little extra
+  hemisphere and warm ambient into the ground), so the village stays legible
+  while the ridges go to silhouette.
+- **exposure follows the sun.** With the sun seven degrees up, the ground gets a
+  seventh of its noon light, which is physically right and looked like an error
+  at the hour the game starts. `state.exposure` is applied to the renderer *and*
+  to the sky dome's own ACES (the dome tonemaps itself, so changing one without
+  the other tears the horizon), and is not applied in full at night: after the
+  sun is gone, darkness is the point.
 - **counters are boards, not stripes.** `planks()` draws horizontal boards with
   grain, knots and shadowed edges; a grain map wrapped round a box reads as
   vertical corrugation.

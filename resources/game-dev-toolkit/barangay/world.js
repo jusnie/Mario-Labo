@@ -1521,14 +1521,27 @@ export function buildWorld(scene, opts = {}) {
     // Skylight is the fill in the tropics: without a real GI pass, a slope
     // facing away from the sun is lit by nothing else, and mountains went to
     // near-black at midday.
-    hemi.intensity = 0.16 + day * 1.15;
+    const duskFill = pal.duskFill ?? 0;
+    // Exposure follows the sun the way an eye does: with the sun a few degrees
+    // up, the ground gets a seventh of its noon light, which is why the village
+    // read as underexposed at the hour the game actually starts. Not applied
+    // in full at night: darkness is the point after the sun is gone.
+    const lowSun = clamp01((0.35 - pal.elev) / 0.42);
+    state.exposure = 1.05 + lowSun * 0.52 * (1 - night * 0.5);
+    // the dome applies its own ACES, so it has to be told the same exposure or
+    // its horizon stops meeting the ground it shares a colour with
+    skyUniforms.exposure.value = state.exposure;
+    hemi.intensity = 0.16 + day * 1.15 + duskFill * 0.5;
     hemi.color.copy(pal.top).lerp(white, 0.35);
     hemi.groundColor.setHex(0x6b5f45).lerp(new THREE.Color(0x2a2418), night);
     // ambient is the ground bounce: a shaded wall in the tropics goes warm and
     // pale, not blue-grey, and a cold ambient was what flattened every facade
     // facing away from the sun
-    ambient.intensity = 0.14 + day * 0.26;
-    ambient.color.setHex(0x6b5f52).lerp(new THREE.Color(0x1a2230), night);
+    ambient.intensity = 0.14 + day * 0.26 + duskFill * 0.16;
+    ambient.color
+      .setHex(0x6b5f52)
+      .lerp(new THREE.Color(0x6a4636), duskFill)
+      .lerp(new THREE.Color(0x1a2230), night * (1 - duskFill * 0.75));
 
     // the sun loses almost all of its punch as it reddens at the horizon
     sun.intensity = day * (2.35 - dusk * 0.75);
