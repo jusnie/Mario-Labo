@@ -92,17 +92,27 @@ comes from `barangay/models.js`, a library of real components:
 
 ## Sound pass
 
-`barangay/sound.js` synthesises everything with the Web Audio API — there are no
-recordings in this build.
+`barangay/sound.js` now plays **recorded** effects and keeps its synthesis only as
+a fallback. The recordings are the Oculus Audio Pack 1 (CC BY 4.0, via Meta Open
+Sound) in `assets/audio/oculus/` — 57 Ogg Vorbis files, 2.7 MB, fetched by
+`tools/fetch-oculus-audio.mjs` and checksummed in `MANIFEST.json`. Attribution is
+in `CREDITS.md` and on the in-game About card.
 
-- **Footsteps** are layered from a heel thump, a two-grain surface crunch and a
-  scuff, panned left/right by alternating foot, with a longer stride when
-  running. Five surfaces are mapped by position in `barangay/surfaces.js`:
-  gravel on the road, grass off it, **wood on the store's floorboards**, and
-  concrete on the hall forecourt.
-- **Landing** thuds when you drop more than a few metres.
-- **Dawn** — a synthesised rooster at 05:00, then sparse birdsong while the sun
-  is up; crickets swell after dusk and the dog howls at midnight.
+- **Footsteps** use the recorded shoe takes for the surface underfoot and pick a
+  random take each stride, with ±5% pitch and level variation and left/right
+  panning. Five surfaces come from `barangay/surfaces.js`: gravel on the road,
+  grass off it, **wood on the store's floorboards**, concrete on the hall
+  forecourt, and dirt on the bare paths. The pack has no gravel, so the road is
+  the concrete take plus a thin synthesised grit layer.
+- **Landing** plays the recorded `Land` take, harder the further you fell.
+- **Ambience** is two long loops crossfaded by the clock: forest by day
+  (59 s) and forest night (45 s), with the recorded forest-birds take dropped in
+  at random intervals and stereo positions.
+- **Dawn** plays the chicken recording at 05:00 (the pack has no rooster — the
+  caption says "manok", not "tilaok"); the midnight dog uses the recorded
+  attention call and barks, lowpassed and delayed to sound far off; the house
+  door is the recorded wooden door.
+- The **radio** stays deliberately synthesised, and says so in its caption.
 
 ## What is actually implemented
 
@@ -165,8 +175,10 @@ resources/game-dev-toolkit/
     textures.js                       procedural canvas surfaces
     physics.js                        Rapier world + shared character step
     shop.js / tindera-lines.js        inventory, wallet, dialogue
-    sound.js                          synthesised ambience, footsteps, howl, radio
+    sound.js                          recorded effects (CC BY 4.0) + synth fallback, radio
   walkthrough-test.mjs                 headless route test (no browser needed)
+  tools/fetch-oculus-audio.mjs        re-downloads the 57 vendored sound effects
+  assets/audio/oculus/                57 Ogg recordings, LICENSE (CC BY 4.0), MANIFEST.json
   assets/characters/cc0/              models, animations, catalogs, licences
   vendor/                             browser bundles (three, rapier)
 ```

@@ -1,0 +1,295 @@
+{
+  "source": "https://github.com/facebookincubator/Meta-open-sound",
+  "collection": "Oculus Audio Pack 1",
+  "path": "corpora/oculus-audio-pack/ogg",
+  "license": "CC BY 4.0",
+  "attribution": "Oculus Audio Pack 1, via Meta Open Sound (facebookincubator/Meta-open-sound), licensed CC BY 4.0",
+  "note": "Only the samples used by Barangay Kabudoy are vendored. Re-fetch with tools/fetch-oculus-audio.mjs",
+  "files": [
+    {
+      "file": "FEETHmn_ShoeDirtWalk_OS_01.ogg",
+      "bytes": 9708,
+      "sha256": "09a4a929df589698ffe1b7244c45648464ff4ed7685212f74f8149a6fe399b00"
+    },
+    {
+      "file": "FEETHmn_ShoeDirtWalk_OS_02.ogg",
+      "bytes": 11062,
+      "sha256": "46f2a068167ad89f732ff6df2087ea7f3170833ef71ba771932e277e70790eec"
+    },
+    {
+      "file": "FEETHmn_ShoeDirtWalk_OS_03.ogg",
+      "bytes": 10221,
+      "sha256": "cfc8028aa89b49885209bdd0007754189b678237248f211614c5bdede5b72b79"
+    },
+    {
+      "file": "FEETHmn_ShoeDirtWalk_OS_04.ogg",
+      "bytes": 10391,
+      "sha256": "b2250e37ac3cb842959d3a083da63ef47b4cbe35d92c1ac1ae321f2c9bd6c537"
+    },
+    {
+      "file": "FEETHmn_ShoeDirtWalk_OS_05.ogg",
+      "bytes": 10150,
+      "sha256": "65d92aa24e36a5fc0819a475a0e4f9284afa409b55f8e2e1ea9dd59737bf61bd"
+    },
+    {
+      "file": "FEETHmn_ShoeDirtRun_OS_01.ogg",
+      "bytes": 8190,
+      "sha256": "e3fd7cd628c8588ba9a7f7b44df717b5ab86ea9c684bd4f43b5f47dcf147ce5e"
+    },
+    {
+      "file": "FEETHmn_ShoeDirtRun_OS_02.ogg",
+      "bytes": 8261,
+      "sha256": "aa7e21c9f751c78b6cbd4a725bd6a767b0eaba2a1539e5000245747b64805bd7"
+    },
+    {
+      "file": "FEETHmn_ShoeDirtRun_OS_03.ogg",
+      "bytes": 8408,
+      "sha256": "113cfa7205da4e3d1c109b712d90a20e6ecc2cb02fd44b29885d471537fd4048"
+    },
+    {
+      "file": "FEETHmn_ShoeDirtRun_OS_04.ogg",
+      "bytes": 7777,
+      "sha256": "660d86e27fb548876da852ab752f03889869d1d04e045517be3d54e00dcd5850"
+    },
+    {
+      "file": "FEETHmn_ShoeDirtRun_OS_05.ogg",
+      "bytes": 7279,
+      "sha256": "8e7f1583bd25c1d2b8e3604df59f004f9647423f8f1e87cc1912cd3801edaf0c"
+    },
+    {
+      "file": "FEETHmn_ShoeDirtLand_OS_01.ogg",
+      "bytes": 19081,
+      "sha256": "94889a17f114935f18f795878cba597c09a1efd46f2ce6f152148a2dceaed38c"
+    },
+    {
+      "file": "FEETHmn_ShoeDirtLand_OS_02.ogg",
+      "bytes": 16191,
+      "sha256": "d9f1195cbae94b9682668c397312ad96005507f347df1f91a5f24b57d9235ab4"
+    },
+    {
+      "file": "FEETHmn_ShoeGrassWalk_OS_01.ogg",
+      "bytes": 9935,
+      "sha256": "c183568af66a6b2c03e892fdafa1336d9c8845cc41e0de6aabfc5d7f1c4c46cd"
+    },
+    {
+      "file": "FEETHmn_ShoeGrassWalk_OS_02.ogg",
+      "bytes": 9550,
+      "sha256": "0d2ace60b94fe01cdcb4401aa1edfc6fefc7a42e1354d3156a226b938e168602"
+    },
+    {
+      "file": "FEETHmn_ShoeGrassWalk_OS_03.ogg",
+      "bytes": 9995,
+      "sha256": "0988a721dca499e8838429a9ef201c1c461bd87e5b68cca6eceefbad26d99a40"
+    },
+    {
+      "file": "FEETHmn_ShoeGrassWalk_OS_04.ogg",
+      "bytes": 10999,
+      "sha256": "3251c225d8903c485e71d6e775c9f47edad92788f14cb8b34d0d8367149ac5ec"
+    },
+    {
+      "file": "FEETHmn_ShoeGrassWalk_OS_05.ogg",
+      "bytes": 11716,
+      "sha256": "0c59e585ed5c2536c234373a6a0fc32adfda2501a662d630c354d47859c8e1d9"
+    },
+    {
+      "file": "FEETHmn_ShoeGrassRun_OS_01.ogg",
+      "bytes": 7917,
+      "sha256": "43d390b767e5c5ae02731217b669d052055c65b36006448969a5e7fa96e5e384"
+    },
+    {
+      "file": "FEETHmn_ShoeGrassRun_OS_02.ogg",
+      "bytes": 7975,
+      "sha256": "3bac35a9151dc929e4918e4b2ff47649d62a0e4233c1576debcc3cfe089bc114"
+    },
+    {
+      "file": "FEETHmn_ShoeGrassRun_OS_03.ogg",
+      "bytes": 8387,
+      "sha256": "eae97974b61af7f73e78e42e56b9d1dbdc188075c4dd69927a0b355e7ab0dd31"
+    },
+    {
+      "file": "FEETHmn_ShoeGrassRun_OS_04.ogg",
+      "bytes": 6343,
+      "sha256": "c3c1ecec2bb7e7dfdf9f0fe7d32eaeedd316f1f0123529f3b422d949cbc0b6c4"
+    },
+    {
+      "file": "FEETHmn_ShoeGrassRun_OS_05.ogg",
+      "bytes": 8369,
+      "sha256": "60cb4ccdec7cd75417b48a197db0ba82cb9d783bbc23fc4b8264832eaf9f2c42"
+    },
+    {
+      "file": "FEETHmn_ShoeGrassLand_OS_01.ogg",
+      "bytes": 14304,
+      "sha256": "56c82d9dfbf7f05d1191cbc71b159277950a6e50306a988c7b9e0002e663004a"
+    },
+    {
+      "file": "FEETHmn_ShoeGrassLand_OS_02.ogg",
+      "bytes": 11514,
+      "sha256": "3fc5257fd9ee1d79838df7e2b2dddf6d213a43367bf530afddb1d16f346c20db"
+    },
+    {
+      "file": "FEETHmn_ShoeWoodWalk_OS_01.ogg",
+      "bytes": 6563,
+      "sha256": "f8fbe8f5b82f419cc3bae22818a586fe3db611596590788501b0de6bd7e31685"
+    },
+    {
+      "file": "FEETHmn_ShoeWoodWalk_OS_02.ogg",
+      "bytes": 6660,
+      "sha256": "af53d16669f53a95bd698829b76dd0bab3e80fce9c6c517d89b5cc8a543910fa"
+    },
+    {
+      "file": "FEETHmn_ShoeWoodWalk_OS_03.ogg",
+      "bytes": 6162,
+      "sha256": "8ef6dc98ee0f626ba0738c30705c6799896014de8c39986c30f92fce5b325415"
+    },
+    {
+      "file": "FEETHmn_ShoeWoodWalk_OS_04.ogg",
+      "bytes": 6510,
+      "sha256": "98160f32ef0143ce349da6eb4e90871cb68160f96c73e5c149b6ab13f24b7329"
+    },
+    {
+      "file": "FEETHmn_ShoeWoodWalk_OS_05.ogg",
+      "bytes": 6693,
+      "sha256": "ec32ce89f7468b09337bfd8194d8a36467f110af3b8ab565fac84be0d488ae20"
+    },
+    {
+      "file": "FEETHmn_ShoeWoodRun_OS_01.ogg",
+      "bytes": 5716,
+      "sha256": "6e68a1b2a5eac902b2e4ba9fa15014da5af7af0a9573dd2bf4abd9546d5cda53"
+    },
+    {
+      "file": "FEETHmn_ShoeWoodRun_OS_02.ogg",
+      "bytes": 5635,
+      "sha256": "e040e9f8c450e44b2d262eb202f9147bf44c48d3c71675e83901f1a067320fc2"
+    },
+    {
+      "file": "FEETHmn_ShoeWoodRun_OS_03.ogg",
+      "bytes": 5489,
+      "sha256": "476d24dbb23838fa72ba384e555bc1582398dc1d9b29b2bf5fce73d435d96d62"
+    },
+    {
+      "file": "FEETHmn_ShoeWoodRun_OS_04.ogg",
+      "bytes": 5391,
+      "sha256": "9684ada3f0ab269dd5ed5bb96ec125762d098960db376015b704a065d994c001"
+    },
+    {
+      "file": "FEETHmn_ShoeWoodRun_OS_05.ogg",
+      "bytes": 5153,
+      "sha256": "0a3e9df96ff25ad6fb19108f80b991c891be55ec2ef12d1a0ec148b0041f5274"
+    },
+    {
+      "file": "FEETHmn_ShoeWoodLand_OS_01.ogg",
+      "bytes": 7047,
+      "sha256": "0f3091aac8e2f06f284309a9f3ebe04a7ced8a163e87c11072eba49f9ce0d90a"
+    },
+    {
+      "file": "FEETHmn_ShoeWoodLand_OS_02.ogg",
+      "bytes": 8818,
+      "sha256": "0d2c6c519e1ad7a9d791a22b786378a014955c83fc7696a18e1feeb3f5455e1a"
+    },
+    {
+      "file": "FEETHmn_ShoeConcreteWalk_OS_01.ogg",
+      "bytes": 5855,
+      "sha256": "75e19656920f306c3344d18bf6c80734375164302acbb00ea2ec1168639a2dde"
+    },
+    {
+      "file": "FEETHmn_ShoeConcreteWalk_OS_02.ogg",
+      "bytes": 6153,
+      "sha256": "f1dcc47a6be2b39e56e949d8e6fdbbab7365e42b280948ca4b8620db48174da6"
+    },
+    {
+      "file": "FEETHmn_ShoeConcreteWalk_OS_03.ogg",
+      "bytes": 7574,
+      "sha256": "12f792de2a3468c0beb0752e12794bdd37cefdb1c03f9e7ded00e709b78431a8"
+    },
+    {
+      "file": "FEETHmn_ShoeConcreteWalk_OS_04.ogg",
+      "bytes": 6493,
+      "sha256": "892b4d78d88b9166d7358302d1b5af4407f685a5d3f57c51766cfff8b6ec88fa"
+    },
+    {
+      "file": "FEETHmn_ShoeConcreteWalk_OS_05.ogg",
+      "bytes": 5697,
+      "sha256": "6783d11a04996b122c27370b6970ed1786ff613c4518bce99cd8c314512f7147"
+    },
+    {
+      "file": "FEETHmn_ShoeConcreteRun_OS_01.ogg",
+      "bytes": 6603,
+      "sha256": "8389371b5d2180af2c29b5f34028341855621c7b13bf80f4781b4a9bf58a0da6"
+    },
+    {
+      "file": "FEETHmn_ShoeConcreteRun_OS_02.ogg",
+      "bytes": 5789,
+      "sha256": "8506b984659f06b776420b38bba4ea76616ba71db35f3fce8c3576dca277d1e9"
+    },
+    {
+      "file": "FEETHmn_ShoeConcreteRun_OS_03.ogg",
+      "bytes": 6039,
+      "sha256": "cb86617645e99f3ec80b2c62901fdb146f97fa56acd80fbe5ce52f9ce7b025dd"
+    },
+    {
+      "file": "FEETHmn_ShoeConcreteRun_OS_04.ogg",
+      "bytes": 5676,
+      "sha256": "5853ec58b7a4ebc4dae92082986cb52be362c07a177bc70c5d0d1483726ff90a"
+    },
+    {
+      "file": "FEETHmn_ShoeConcreteRun_OS_05.ogg",
+      "bytes": 5826,
+      "sha256": "6afa540ce4f1d3cbf0869e57d46e1d5db03fcdf6205bae718a5e426e80239b70"
+    },
+    {
+      "file": "FEETHmn_ShoeConcreteLand_OS_01.ogg",
+      "bytes": 6681,
+      "sha256": "9c08726cd711fe69c6eade764def0def19aeacaaeb48a1c3fd595d59d84efded"
+    },
+    {
+      "file": "FEETHmn_ShoeConcreteLand_OS_02.ogg",
+      "bytes": 6673,
+      "sha256": "fc18f95bef7f68711c5521d6417ad8276ff0b94e0129fc868b32c104f551516c"
+    },
+    {
+      "file": "AMBForst_Night_LOOP_01.ogg",
+      "bytes": 903958,
+      "sha256": "ff62723c83eececdd4fc3c4707a7e35d4216d1fda84a07718464fa8f5d56d461"
+    },
+    {
+      "file": "AMBForst_Forest_LOOP_01.ogg",
+      "bytes": 1156239,
+      "sha256": "9da161682bcd32866f99c1dfc190ea3240d114f44beb88ff7521fe5f25d059a2"
+    },
+    {
+      "file": "AMBForst_ForestBirds_OS_01.ogg",
+      "bytes": 58543,
+      "sha256": "d6d3a97c0d23f86d1db865a5d24adc00851f67dab4a6ea776fb660df44ac88c8"
+    },
+    {
+      "file": "ANMLDog_DogBark_OS_01.ogg",
+      "bytes": 8245,
+      "sha256": "789f9fd6e3978669a89c36ac5504f1b99aba4a97f26548dead35a7cb86a5f67e"
+    },
+    {
+      "file": "ANMLDog_DogBark_OS_02.ogg",
+      "bytes": 8626,
+      "sha256": "af0e65b5a6180640508242384a63a2e4bde844b1af264bc41e889b3016e2d011"
+    },
+    {
+      "file": "ANMLDog_DogAttention_OS_01.ogg",
+      "bytes": 22257,
+      "sha256": "34b70a5bac798305b9cfce6606217ef2953329b915a7cc08f8ef897b55ef64f3"
+    },
+    {
+      "file": "BIRDFowl_Chicken_OS_01.ogg",
+      "bytes": 37708,
+      "sha256": "a34441f0792e6eef21e8a8660fb39f0d96c5d780d8863509e67bbe0745be07c5"
+    },
+    {
+      "file": "DOORWood_FrontDoorOpen_OS_01.ogg",
+      "bytes": 11371,
+      "sha256": "03f9b072f79a7ceb8fa8b3b101f7a3c2a7919f5b1d6b61c7be7f4c089ee9a2ec"
+    },
+    {
+      "file": "DOORWood_FrontDoorClose_OS_01.ogg",
+      "bytes": 9239,
+      "sha256": "f7c566d2e6df619de2fb2bdc66799d5ca632c1bc323a01dc8fdfad18c151314c"
+    }
+  ]
+}

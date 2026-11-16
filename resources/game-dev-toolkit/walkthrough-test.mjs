@@ -10,6 +10,7 @@
  *
  * Run: npm run walkthrough
  */
+import { existsSync, readFileSync } from "node:fs";
 import { LAYOUT } from "./barangay/world.js";
 import { PLAYER, START_POSITION } from "./barangay/physics.js";
 
@@ -253,7 +254,8 @@ section("footstep surfaces");
     ? ok(`all ${SURFACE_KINDS.length} surfaces have a synthesised footstep (${Object.keys(SURFACES).join(", ")})`)
     : bad(`no sound defined for: ${missing.join(", ")}`);
 
-  const engine = new (await import("./barangay/sound.js")).AudioEngine();
+  const soundMod = await import("./barangay/sound.js");
+  const engine = new soundMod.AudioEngine();
   const api = ["footstep", "landing", "rooster", "setBirds", "dogHowl", "setNight"];
   const absent = api.filter((m) => typeof engine[m] !== "function");
   absent.length === 0
@@ -269,6 +271,66 @@ section("footstep surfaces");
   } catch (err) {
     bad(`audio threw before start(): ${err.message}`);
   }
+
+  // --- the recordings the engine asks for must all be on disk, and be real
+  //     Vorbis, not empty placeholders left behind by a failed download.
+  const sampleDir = new URL("./assets/audio/oculus/", import.meta.url);
+  const missingFiles = [];
+  const notOgg = [];
+  for (const file of soundMod.SAMPLE_FILES) {
+    const here = new URL(file, sampleDir);
+    if (!existsSync(here)) {
+      missingFiles.push(file);
+      continue;
+    }
+    if (readFileSync(here).subarray(0, 4).toString("latin1") !== "OggS") notOgg.push(file);
+  }
+  missingFiles.length === 0
+    ? ok(`${soundMod.SAMPLE_FILES.length} recorded samples present in assets/audio/oculus/`)
+    : bad(`missing recordings: ${missingFiles.slice(0, 5).join(", ")}${missingFiles.length > 5 ? " …" : ""}`);
+  notOgg.length === 0
+    ? ok("every sample is a real Ogg Vorbis stream")
+    : bad(`not Ogg Vorbis: ${notOgg.join(", ")}`);
+
+  const manifestPath = new URL("MANIFEST.json", sampleDir);
+  if (existsSync(manifestPath)) {
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const listed = new Set(manifest.files.map((f) => f.file));
+    const unlisted = soundMod.SAMPLE_FILES.filter((f) => !listed.has(f));
+    unlisted.length === 0
+      ? ok(`MANIFEST.json lists all ${listed.size} files with sha256 checksums`)
+      : bad(`not in MANIFEST.json: ${unlisted.slice(0, 4).join(", ")}`);
+    manifest.license === "CC BY 4.0" && /Oculus Audio Pack/.test(manifest.attribution ?? "")
+      ? ok(`samples licensed ${manifest.license} and attributed to ${manifest.collection}`)
+      : bad(`manifest licence/attribution incomplete: ${manifest.license}`);
+  } else {
+    bad("assets/audio/oculus/MANIFEST.json is missing (attribution + checksums)");
+  }
+  if (existsSync(new URL("LICENSE", sampleDir))) ok("CC BY 4.0 LICENSE shipped alongside the samples");
+  else bad("assets/audio/oculus/LICENSE is missing");
+
+  // --- nothing may silently go back to being fully synthesised
+  const src = readFileSync(new URL("./barangay/sound.js", import.meta.url), "utf8");
+  /decodeAudioData/.test(src) ? ok("sound.js decodes the recordings (decodeAudioData)") : bad("sound.js has no decode path");
+  for (const [name, pattern] of [
+    ["footstep (recorded takes)", /recordedFootstep/],
+    ["landing (recorded takes)", /FOOT_PACK\[cfg\.family\]\?\.land/],
+    ["chicken at dawn (recorded)", /BIRDFowl_Chicken_OS_01\.ogg/],
+    ["forest ambience loop", /AMBForst_Forest_LOOP_01\.ogg/],
+    ["night ambience loop", /AMBForst_Night_LOOP_01\.ogg/],
+    ["dog across the fields", /ANMLDog_DogAttention_OS_01\.ogg/],
+    ["wooden door", /DOORWood_FrontDoorOpen_OS_01\.ogg/],
+  ]) {
+    pattern.test(src) ? ok(`${name} is a recording, not an oscillator`) : bad(`${name} still looks synthesised`);
+  }
+  // CC BY 4.0 requires the attribution to be visible, not just in a file.
+  const page = readFileSync(new URL("./barangay/index.html", import.meta.url), "utf8");
+  /Oculus Audio Pack 1/.test(page) && /CC BY 4\.0/.test(page)
+    ? ok("on-screen credit names the pack and its CC BY 4.0 licence")
+    : bad("index.html shows no CC BY 4.0 attribution for the recorded audio");
+  /synthFootstep/.test(src) && /synthRooster/.test(src)
+    ? ok("synthesis kept as the fallback path before samples load")
+    : bad("the synthesis fallback was removed — audio would break if a sample 404s");
 }
 
 /* ------------------------------------------------------------------ roofs */

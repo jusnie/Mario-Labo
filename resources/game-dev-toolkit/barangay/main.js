@@ -474,12 +474,13 @@ async function boot() {
     const airborne = !app.grounded;
     const impact = app.velocityY;
     app.grounded = step.grounded;
+    const pos = step.position;
     if (app.grounded && app.velocityY < 0) {
-      if (airborne && impact < -5) audio.landing(Math.min(1.6, Math.abs(impact) / 11));
+      if (airborne && impact < -5) {
+        audio.landing(Math.min(1.6, Math.abs(impact) / 11), surfaceAt(pos.x, pos.z));
+      }
       app.velocityY = -2;
     }
-
-    const pos = step.position;
 
     // --- footsteps: stride length depends on gait, feet alternate, and the
     //     surface underfoot changes the sound
@@ -514,6 +515,7 @@ async function boot() {
     world3d.update(dt, camera.position);
     store.update(dt);
     audio.setNight(1 - world3d.clock.daylight);
+    audio.setDaylight(world3d.clock.daylight);
     audio.setBirds(world3d.clock.daylight > 0.55);
     house.bulbMat.emissiveIntensity = (1 - world3d.clock.daylight) * 1.5;
     house.porchLight.intensity = (1 - world3d.clock.daylight) * 7;

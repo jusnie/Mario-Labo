@@ -36,18 +36,42 @@ Vendored in `assets/characters/cc0/` with the upstream `LICENSE`,
 
 ## Audio
 
-No recorded audio is shipped in this build.
+**Recorded sound effects — Oculus Audio Pack 1, CC BY 4.0.**
 
-- Crickets, wind, footsteps, the door creak, the radio loop and the **dog howl**
-  are all synthesised at runtime with the Web Audio API
-  (`barangay/sound.js`). The howl is explicitly **not** a recording.
-- The previous build used a CC0 dog-howl recording by **simcotter**
-  (<https://freesound.org/people/simcotter/sounds/115357/>), sourced via the
-  **bark-lab** repository at `602a6c5931be85d5421a7b469d8a8ec8aa9ae656`. That
-  file could not be fetched in this environment (no route to freesound). If it
-  is restored, place it at `assets/audio/dog-howl.ogg` and keep this credit.
-- Cricket, footstep and radio credits from the earlier build were not recovered;
-  re-add them here if those files come back.
+- Source: **Meta Open Sound** (`facebookincubator/Meta-open-sound`), directory
+  `corpora/oculus-audio-pack/ogg`. <https://github.com/facebookincubator/Meta-open-sound>
+- Licence: **Creative Commons Attribution 4.0 International (CC BY 4.0)**.
+  The pack's own `LICENSE` file is vendored next to the samples in
+  `assets/audio/oculus/LICENSE`, and the collection-level `LICENSE` in that
+  repository is CC0 — the audio files themselves are the CC BY 4.0 part.
+- Attribution to keep, in the form the pack asks for:
+  **"Oculus Audio Pack 1, via Meta Open Sound, licensed CC BY 4.0."**
+  It is printed in game (the Sound panel / About card) and repeated in
+  `assets/audio/oculus/MANIFEST.json`, which also records each file's size and
+  SHA-256 so a re-download can be checked.
+- Vendored subset — 57 files, 2.7 MB: `FEETHmn_Shoe{Concrete,Dirt,Grass,Wood}`
+  `{Walk,Run,Land}` takes, `BIRDFowl_Chicken_OS_01`, `ANMLDog_DogAttention_OS_01`,
+  `ANMLDog_DogBark_OS_01/02`, `DOORWood_FrontDoorOpen/Close_OS_01`,
+  `AMBForst_ForestBirds_OS_01`, `AMBForst_Forest_LOOP_01`,
+  `AMBForst_Night_LOOP_01`. Re-fetch with
+  `node tools/fetch-oculus-audio.mjs`.
+- The samples are Freesound-derived field recordings redistributed by Meta under
+  CC BY 4.0; the individual recordist names are not carried in the pack's
+  filenames, so the collection is credited as above rather than per-clip.
+
+Still synthesised on purpose (`barangay/sound.js`):
+
+- the **radio** in Ernie's house — a generated music loop, captioned as
+  "synthesised loop";
+- the **grit** layer mixed under the gravel road, because the pack has no gravel
+  recording;
+- the whole **fallback path** used before the samples finish decoding or if any
+  of them 404s, so a missing file cannot silence the game.
+
+Two things the pack does not contain, stated plainly: there is **no rooster** —
+`BIRDFowl_Chicken_OS_01` is a chicken, and the dawn call plays it pitched down
+and captioned "(Manok sa malayo)"; and there is no dog howl, only the
+"attention" call and barks, which is what the midnight dog now uses.
 
 ## Textures
 

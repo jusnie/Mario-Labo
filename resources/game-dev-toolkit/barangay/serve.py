@@ -16,7 +16,9 @@ import os
 import socketserver
 import sys
 
-TOOLKIT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# realpath, not abspath: the toolkit root is a symlink to this file, and
+# abspath would leave us one directory short when it is run through the link.
+TOOLKIT_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 EXTRA_MIME = {
     ".js": "text/javascript",
