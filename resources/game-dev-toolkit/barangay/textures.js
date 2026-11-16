@@ -722,16 +722,52 @@ export function philippineFlag() {
 /** Soft drifting cloud puff with alpha. */
 export function cloud() {
   if (cache.has("cloud")) return cache.get("cloud");
-  const size = 256;
+  const size = 512;
   const { c, ctx } = canvas(size);
   ctx.clearRect(0, 0, size, size);
   const r = rnd(3);
-  for (let i = 0; i < 26; i++) {
-    const x = size * 0.15 + r() * size * 0.7;
-    const y = size * 0.35 + r() * size * 0.4;
-    const rad = size * (0.08 + r() * 0.16);
+
+  // Billows: a heap of soft circles along a horizontal axis, tallest in the
+  // middle. Solid rather than translucent, so the sprite does not wash out to
+  // a flat white smudge against the sky.
+  const heap = [];
+  for (let i = 0; i < 34; i++) {
+    const t = (i / 33) * 2 - 1; // -1..1 across the cloud
+    const x = size * 0.5 + t * size * 0.34 + (r() - 0.5) * size * 0.08;
+    const lift = Math.max(0, 1 - Math.abs(t)) ; // taller in the middle
+    const y = size * (0.66 - lift * 0.17 - r() * 0.09);
+    const rad = size * (0.07 + lift * 0.08 + r() * 0.07);
+    heap.push({ x, y, rad });
+  }
+  // soft shadowed underside first
+  for (const b of heap) {
+    const g = ctx.createRadialGradient(b.x, b.y + b.rad * 0.25, b.rad * 0.1, b.x, b.y, b.rad * 1.08);
+    g.addColorStop(0, "rgba(184,196,210,0.95)");
+    g.addColorStop(0.7, "rgba(196,207,220,0.55)");
+    g.addColorStop(1, "rgba(200,210,222,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y + b.rad * 0.16, b.rad * 1.08, 0, 6.28);
+    ctx.fill();
+  }
+  // sunlit crowns, offset up and to the sun side
+  for (const b of heap) {
+    const g = ctx.createRadialGradient(b.x - b.rad * 0.2, b.y - b.rad * 0.3, 0, b.x - b.rad * 0.1, b.y, b.rad);
+    g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(0.55, "rgba(252,253,255,0.85)");
+    g.addColorStop(1, "rgba(240,244,250,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y - b.rad * 0.06, b.rad, 0, 6.28);
+    ctx.fill();
+  }
+  // a few smaller puffs torn off the top edge
+  for (let i = 0; i < 14; i++) {
+    const x = size * (0.25 + r() * 0.5);
+    const y = size * (0.3 + r() * 0.18);
+    const rad = size * (0.03 + r() * 0.05);
     const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
-    g.addColorStop(0, "rgba(255,255,255,0.55)");
+    g.addColorStop(0, "rgba(255,255,255,0.9)");
     g.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -740,6 +776,7 @@ export function cloud() {
   }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
   cache.set("cloud", tex);
   return tex;
 }

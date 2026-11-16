@@ -1476,7 +1476,7 @@ export function buildWorld(scene, opts = {}) {
     backdrop.stars.visible = backdrop.starMat.opacity > 0.01;
     for (const c of backdrop.clouds) {
       c.sprite.material.color.copy(skyUniforms.horizonColor.value).lerp(new THREE.Color(0xffffff), 0.55);
-      c.sprite.material.opacity = 0.12 + day * 0.34;
+      c.sprite.material.opacity = 0.18 + day * 0.42;
     }
     sky.position.copy(opts.cameraPosition ?? new THREE.Vector3());
   }
