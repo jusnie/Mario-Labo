@@ -31,7 +31,6 @@ import {
   clothesline,
   bambooFence,
   horizonTerrain,
-  makeNoise,
   mergeStaticGroup,
   makeGlassMaterial,
 } from "./models.js";
