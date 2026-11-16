@@ -204,7 +204,7 @@ export function roadBed({ verge = 0.3, size = 768, seed = 21 } = {}) {
   /* ---- verge: dry, trampled ground with grass crowding in from outside ---- */
   ctx.fillStyle = "#8f8468";
   ctx.fillRect(0, 0, size, size);
-  speckle(ctx, size, 1200, ["#9a8f72", "#82755c", "#a89c7c", "#776b52"], 2, 16, seed + 1);
+  speckle(ctx, size, 1400, ["#8b8064", "#786c53", "#94896c", "#6d6149"], 2, 16, seed + 1);
 
   // grass: fine upright strokes, denser toward the outer edge
   for (let i = 0; i < 5200; i++) {
