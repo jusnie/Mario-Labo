@@ -22,7 +22,9 @@ export async function createStore(scene, colliders, characters) {
   const wallH = 3.1;
   const plasterMat = new THREE.MeshStandardMaterial({ map: TEX.plaster(2), color: 0xc8d6bd, roughness: 0.95 });
   const trimMat = new THREE.MeshStandardMaterial({ color: 0x2f5d43, roughness: 0.8 });
-  const woodMat = new THREE.MeshStandardMaterial({ map: TEX.wood(2), roughness: 0.9 });
+  const counterTex = TEX.planks(5, "#96714a");
+  counterTex.repeat.set(3, 1); // boards run the length of the counter
+  const woodMat = new THREE.MeshStandardMaterial({ map: counterTex, roughness: 0.86 });
   const nipaMat = new THREE.MeshStandardMaterial({ map: TEX.nipa(4), roughness: 0.95 });
 
   /* shell: back and side walls only, so the front is an open counter */
@@ -153,24 +155,52 @@ export async function createStore(scene, colliders, characters) {
     group.add(tie);
   }
 
-  /* hanging sachets along the counter (the classic sari-sari curtain) */
-  const sachetGeo = new THREE.PlaneGeometry(0.16, 0.24);
+  /* hanging sachets along the counter (the classic sari-sari curtain):
+     rows of pouches on strings, each row a run of one or two brands, hanging
+     in front of the shelves the way a real tindahan hangs them */
+  const sachetGeo = new THREE.PlaneGeometry(0.142, 0.185);
+  const packetTex = TEX.packet();
   const wireMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.8 });
-  for (let i = 0; i < 12; i++) {
-    const x = -W / 2 + 0.7 + i * ((W - 1.4) / 11);
-    const mat = new THREE.MeshStandardMaterial({
-      color: productColors[(i * 3) % productColors.length],
-      roughness: 0.65,
-      side: THREE.DoubleSide,
-    });
-    const sachet = new THREE.Mesh(sachetGeo, mat);
-    sachet.position.set(x, wallH - 0.62 - (i % 3) * 0.1, D / 2 + 0.12);
-    sachet.rotation.y = (Math.random() - 0.5) * 0.25;
-    group.add(sachet);
-    const string = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.3, 3), wireMat);
-    string.position.set(x, wallH - 0.45, D / 2 + 0.12);
-    group.add(string);
-  }
+  const brand = [0xc4453a, 0x2f6b9a, 0xd8a53a, 0x4a8a4a, 0xe6e2d6, 0xb04a72, 0x2f7f7f, 0xcf5b2a];
+  const stripMat = (hex) =>
+    sharedMaterial(`sachet:${hex.toString(16)}`, () =>
+      new THREE.MeshStandardMaterial({
+        map: packetTex,
+        color: hex,
+        roughness: 0.52,
+        side: THREE.DoubleSide,
+      })
+    );
+  const sachetGroup = new THREE.Group();
+  const rows = [2.52, 2.12, 1.74];
+  rows.forEach((rowY, row) => {
+    const span = W - 1.0;
+    const count = Math.floor(span / 0.148);
+    let brandIndex = row * 3;
+    let left = 5 + ((row * 7) % 9);
+    for (let i = 0; i < count; i++) {
+      if (left-- <= 0) {
+        brandIndex += 1 + ((i * 5 + row) % 2);
+        left = 6 + ((i * 11 + row * 3) % 10);
+      }
+      const hex = brand[brandIndex % brand.length];
+      const sachet = new THREE.Mesh(sachetGeo, stripMat(hex));
+      const sway = Math.sin(i * 1.9 + row * 2.3);
+      sachet.position.set(
+        -span / 2 + 0.07 + i * 0.148 + ((i * 3) % 2 ? 0.004 : -0.004),
+        rowY - 0.1 + ((i * 7 + row) % 3) * 0.006,
+        D / 2 + 0.12 + Math.abs(((i + row) % 3) - 1) * 0.012
+      );
+      sachet.rotation.z = sway * 0.05;
+      sachet.rotation.y = sway * 0.2;
+      sachetGroup.add(sachet);
+    }
+    const string = new THREE.Mesh(new THREE.CylinderGeometry(0.0032, 0.0032, span, 4), wireMat);
+    string.rotation.z = Math.PI / 2;
+    string.position.set(0, rowY + 0.06, D / 2 + 0.12);
+    sachetGroup.add(string);
+  });
+  group.add(mergeStaticGroup(sachetGroup));
 
   /* signboard */
   const signTex = TEX.sign("SARI-SARI STORE", { size: 78, bg: "#f2e9c9", border: "#8a2f2f", fg: "#7b1f1f" });

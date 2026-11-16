@@ -155,6 +155,99 @@ export function grass(repeat = 26) {
  * every metre or so, which reads as stubble on a lawn - the texture carries the
  * canopy and the standing water, the instanced tufts carry the silhouette.
  */
+/**
+ * A shampoo/coffee sachet, in greyscale so a strip can be tinted any brand
+ * colour: foil body, crimped edges, a band of print near the top, a barcode.
+ * Flat coloured rectangles hanging from an eave were the most toy-like thing
+ * left in the store.
+ */
+/**
+ * Horizontal boards, for counters and benches: a grain texture wrapped round a
+ * box reads as vertical stripes, which is why the store counter looked like
+ * corrugated cardboard.
+ */
+export function planks(boards = 6, tone = "#8a6a45", seed = 12) {
+  const key = `planks${boards}_${tone}_${seed}`;
+  if (cache.has(key)) return cache.get(key);
+  const size = 512;
+  const { c, ctx } = canvas(size);
+  const r = rnd(seed);
+  const base = new THREE.Color(tone);
+  const boardH = size / boards;
+  for (let i = 0; i < boards; i++) {
+    const shade = 0.82 + r() * 0.34;
+    const col = base.clone().multiplyScalar(shade);
+    ctx.fillStyle = `#${col.getHexString()}`;
+    ctx.fillRect(0, i * boardH, size, boardH - 1);
+    // grain along the board
+    for (let g = 0; g < 26; g++) {
+      const y = i * boardH + 3 + r() * (boardH - 6);
+      ctx.strokeStyle = `rgba(${Math.round(col.r * 150)},${Math.round(col.g * 140)},${Math.round(col.b * 120)},${0.1 + r() * 0.2})`;
+      ctx.lineWidth = 0.6 + r() * 1.4;
+      ctx.beginPath();
+      const x0 = r() * size * 0.4;
+      ctx.moveTo(x0, y);
+      ctx.bezierCurveTo(x0 + size * 0.3, y + (r() - 0.5) * 3, x0 + size * 0.6, y + (r() - 0.5) * 3, size, y + (r() - 0.5) * 2);
+      ctx.stroke();
+    }
+    // a knot every few boards
+    if (r() < 0.5) {
+      const kx = r() * size;
+      const ky = i * boardH + boardH * (0.3 + r() * 0.4);
+      const kr = 3 + r() * 6;
+      const g2 = ctx.createRadialGradient(kx, ky, 1, kx, ky, kr * 2.4);
+      g2.addColorStop(0, "rgba(60,42,26,0.85)");
+      g2.addColorStop(0.55, "rgba(90,66,42,0.5)");
+      g2.addColorStop(1, "rgba(120,94,64,0)");
+      ctx.fillStyle = g2;
+      ctx.beginPath();
+      ctx.ellipse(kx, ky, kr * 2.4, kr * 1.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // shadow under each board edge
+    ctx.fillStyle = "rgba(30,20,12,0.32)";
+    ctx.fillRect(0, i * boardH + boardH - 2.5, size, 2.5);
+  }
+  const tex = finish(c, 1);
+  cache.set(key, tex);
+  return tex;
+}
+
+export function packet() {
+  if (cache.has("packet")) return cache.get("packet");
+  const size = 128;
+  const { c, ctx } = canvas(size);
+  const r = rnd(31);
+  ctx.fillStyle = "#f2f0ea";
+  ctx.fillRect(0, 0, size, size);
+  // crimped top and bottom edges
+  ctx.fillStyle = "#cfcbc0";
+  ctx.fillRect(0, 0, size, 7);
+  ctx.fillRect(0, size - 6, size, 6);
+  for (let i = 0; i < size; i += 6) {
+    ctx.fillStyle = i % 12 ? "#bdb8ac" : "#e6e2d8";
+    ctx.fillRect(i, 1, 3, 4);
+    ctx.fillRect(i, size - 4, 3, 3);
+  }
+  // print band
+  ctx.fillStyle = "#8e897c";
+  ctx.fillRect(0, 12, size, 44);
+  ctx.fillStyle = "#6f6a5e";
+  ctx.beginPath();
+  ctx.ellipse(size * 0.32, 34, 22, 15, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#a8a396";
+  for (let i = 0; i < 3; i++) ctx.fillRect(size * 0.58, 20 + i * 8, 34 - i * 6, 4);
+  // fine print and a barcode
+  ctx.fillStyle = "#b7b2a4";
+  for (let i = 0; i < 5; i++) ctx.fillRect(12, 66 + i * 7, 60 + r() * 44, 2);
+  ctx.fillStyle = "#55524a";
+  for (let i = 0; i < 18; i++) ctx.fillRect(16 + i * 5, 104, 1 + (i % 3), 16);
+  const tex = finish(c, 1);
+  cache.set("packet", tex);
+  return tex;
+}
+
 export function paddy(repeat = 1, rows = 10) {
   const key = `paddy${repeat}_${rows}`;
   if (cache.has(key)) return cache.get(key);

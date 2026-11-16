@@ -289,6 +289,37 @@ ground as a rectangle, and black holes for windows. What changed:
   the longest line clears the border (the balcony sign used to read "ARANGAY
   KABUDOC").
 
+### Second pass: the surfaces you stop seeing
+
+The first pass fixed the things that were obviously wrong. This one went after
+the things that were never wrong enough to notice, which is where a scene still
+reads as a diorama:
+
+- **the floor is no longer one colour.** The village disc is a polar grid with
+  per-vertex colour now — dry patches, damp hollows, a worn band down the road —
+  over the grass map. It is the largest surface in the game and it used to be a
+  single olive tone.
+- **paddies hold water.** `paddy()` draws transplanted hills standing in water,
+  ~26 cm apart, under a rice texture that carries the canopy; the instanced tufts
+  carry the silhouette. The plot gets macro colour in its vertices so the 2.6 m
+  tile does not read as wallpaper. Dry mud under green tufts was what made the
+  fields look like carpet.
+- **shrubs are leaves, not blobs.** A dark core under two `leafSpray()`s of
+  alpha-cut leaves from `leafSprig()` — midrib, side veins, a lighter tip — so a
+  hedge has an edge made of leaves.
+- **banana leaves have their own colour.** Vertex colour per leaf: midrib in
+  shade, edges catching light, tips yellowing, the oldest leaves browning off.
+  Nine to twelve per plant instead of seven, drooping further.
+- **ambient is ground bounce, not blue.** It was `0x334455`, which turned every
+  wall facing away from the sun grey-blue. It is warm now and slightly stronger,
+  so a shaded facade stays cream.
+- **the sari-sari curtain is stock, not bunting.** Rows of pouches on strings,
+  each row a run of one or two brands, tinted foil-print packets (`packet()`)
+  instead of twelve brightly coloured rectangles a metre apart.
+- **counters are boards, not stripes.** `planks()` draws horizontal boards with
+  grain, knots and shadowed edges; a grain map wrapped round a box reads as
+  vertical corrugation.
+
 ## What is actually implemented
 
 - Terrain, a crowned dirt road corridor with baked verges and 11 000 instanced
