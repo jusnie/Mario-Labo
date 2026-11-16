@@ -112,36 +112,66 @@ export class WorldClock {
 }
 
 /* ------------------------------------------------------------------- helpers */
-function gableRoof(width, depth, rise, material, overhang = 0.5) {
+/**
+ * A gable roof. `width` is the span the two slopes cover (perpendicular to the
+ * ridge), `depth` is the length of the ridge.
+ *
+ * The slopes must drop away from the ridge: a box lying along X tilts the +X end
+ * UP when rotated by +angle, so the +X slope needs -angle. Getting that sign
+ * backwards produces a V (a butterfly roof) with the gable triangles sticking
+ * through it.
+ *
+ * `ridgeAlong` orients the finished roof: "z" leaves the ridge on Z (gable ends
+ * facing front/back), "x" turns it so the ridge runs along X (gable ends on the
+ * short sides, which is how the hall is roofed).
+ */
+export function gableRoof(
+  width,
+  depth,
+  rise,
+  material,
+  overhang = 0.5,
+  ridgeAlong = "z",
+  gableMaterial = null
+) {
   const group = new THREE.Group();
-  const w = width / 2 + overhang;
-  const slope = Math.sqrt(w * w + rise * rise);
-  const angle = Math.atan2(rise, w);
+  const halfSpan = width / 2 + overhang;
+  const slope = Math.sqrt(halfSpan * halfSpan + rise * rise);
+  const angle = Math.atan2(rise, halfSpan);
+  const ridgeLength = depth + overhang * 2;
+
   for (const side of [-1, 1]) {
-    const plane = new THREE.Mesh(new THREE.BoxGeometry(slope, 0.12, depth + overhang * 2), material);
-    plane.rotation.z = side * angle;
-    plane.position.set((side * w) / 2, rise / 2, 0);
+    const plane = new THREE.Mesh(new THREE.BoxGeometry(slope, 0.12, ridgeLength), material);
+    // ridge end high, eave end low
+    plane.rotation.z = -side * angle;
+    plane.position.set((side * halfSpan) / 2, rise / 2, 0);
     plane.castShadow = true;
     plane.receiveShadow = true;
     group.add(plane);
   }
+
   // ridge cap
-  const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.16, depth + overhang * 2), material);
+  const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, ridgeLength), material);
   ridge.position.y = rise;
   group.add(ridge);
-  // gable ends
+
+  // gable ends: triangles that close the space under the rake
   const shape = new THREE.Shape();
   shape.moveTo(-width / 2, 0);
   shape.lineTo(width / 2, 0);
   shape.lineTo(0, rise);
   shape.closePath();
   const gableGeo = new THREE.ShapeGeometry(shape);
+  const gableMat =
+    gableMaterial ?? new THREE.MeshStandardMaterial({ color: 0xd9d2c2, roughness: 0.95 });
   for (const z of [-depth / 2, depth / 2]) {
-    const g = new THREE.Mesh(gableGeo, new THREE.MeshStandardMaterial({ color: 0xd9d2c2, roughness: 0.95 }));
+    const g = new THREE.Mesh(gableGeo, gableMat);
     g.position.set(0, 0, z);
     g.rotation.y = z < 0 ? Math.PI : 0;
     group.add(g);
   }
+
+  if (ridgeAlong === "x") group.rotation.y = Math.PI / 2;
   return group;
 }
 
@@ -473,12 +503,10 @@ export function buildHouse(opts = {}) {
   group.add(plinth);
 
   const rise = Math.min(2.4, width * 0.28 + 0.7);
-  const roofGroup = gableRoof(width, depth, rise, roofMat, 0.55);
+  const gableMat = new THREE.MeshStandardMaterial({ map: TEX.plaster(2), color: wallColor, roughness: 0.95 });
+  // ridge along Z => the gable end faces the road, slopes face the neighbours
+  const roofGroup = gableRoof(width, depth, rise, roofMat, 0.55, "z", gableMat);
   roofGroup.position.y = wallH;
-  roofGroup.rotation.y = Math.PI / 2;
-  roofGroup.children.forEach((c) => {
-    if (c.geometry?.type === "ShapeGeometry") c.geometry.dispose();
-  });
   group.add(roofGroup);
 
   // windows + door on the front (+Z) face
@@ -565,9 +593,9 @@ function buildHall(scene, colliders) {
 
   // roof, ridge running across the front so the gable faces the road
   const rise = 3.4;
-  const roofGroup = gableRoof(W, D, rise, roofMat, 0.8);
+  const gableMat = new THREE.MeshStandardMaterial({ map: TEX.plaster(3), color: 0xf1ece0, roughness: 0.9 });
+  const roofGroup = gableRoof(D, W, rise, roofMat, 0.8, "x", gableMat);
   roofGroup.position.y = 0.7 + wallH;
-  roofGroup.rotation.y = Math.PI / 2;
   group.add(roofGroup);
 
   // windows: five upstairs, four plus the door downstairs

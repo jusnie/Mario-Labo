@@ -7,7 +7,7 @@
  * the design notes — the original scene files were not recoverable.
  */
 import * as THREE from "three";
-import { buildHouse } from "./world.js";
+import { buildHouse, gableRoof } from "./world.js";
 import * as TEX from "./textures.js";
 
 /* ------------------------------------------------------------------- store */
@@ -47,20 +47,10 @@ export async function createStore(scene, colliders, characters) {
   floor.position.y = 0.31;
   group.add(floor);
 
-  /* roof */
-  const roofGroup = new THREE.Group();
+  /* roof: ridge parallel to the storefront, so the eaves shade the counter */
   const rise = 1.9;
-  const w2 = W / 2 + 0.7;
-  const slope = Math.sqrt(w2 * w2 + rise * rise);
-  const angle = Math.atan2(rise, w2);
-  for (const side of [-1, 1]) {
-    const plane = new THREE.Mesh(new THREE.BoxGeometry(slope, 0.14, D + 1.6), nipaMat);
-    plane.rotation.z = side * angle;
-    plane.position.set((side * w2) / 2, wallH + rise / 2, 0);
-    plane.castShadow = true;
-    group.add(plane);
-  }
-  roofGroup.position.y = 0;
+  const roofGroup = gableRoof(D, W, rise, nipaMat, 0.7, "x", plasterMat);
+  roofGroup.position.y = wallH;
   group.add(roofGroup);
 
   /* counter + service window */

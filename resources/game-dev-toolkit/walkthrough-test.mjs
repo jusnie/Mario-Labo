@@ -35,7 +35,7 @@ globalThis.document = {
 
 const THREE = await import("three");
 const RAPIER = await import("@dimforge/rapier3d-compat");
-const { buildWorld } = await import("./barangay/world.js");
+const { buildWorld, gableRoof, buildHouse } = await import("./barangay/world.js");
 const { createStore, createErniesHouse, buildStreetFurniture } = await import("./barangay/places.js");
 const { buildPhysics, stepPlayer } = await import("./barangay/physics.js");
 
@@ -189,6 +189,87 @@ const distToDoor = Math.hypot(
 distToDoor < 3.0
   ? ok(`Ernie's house door reachable — ${distToDoor.toFixed(2)}m`)
   : bad(`house door unreachable (${distToDoor.toFixed(2)}m)`);
+
+/* ------------------------------------------------------------------ roofs */
+section("roofs slope the right way");
+{
+  // A box lying along X tilts its +X end UP under a positive Z rotation, so a
+  // positive sign builds a V instead of a Λ and the gable triangles poke
+  // through. This test pins the geometry: high at the ridge, low at the eaves.
+  const mat = new THREE.MeshStandardMaterial();
+  const W = 8.2;
+  const D = 6.6;
+  const RISE = 2.4;
+  const OVER = 0.55;
+  const roof = gableRoof(W, D, RISE, mat, OVER);
+  roof.updateMatrixWorld(true);
+
+  const planes = roof.children.filter(
+    (c) => c.isMesh && c.geometry?.type === "BoxGeometry" && c.geometry.parameters.width > 2
+  );
+  planes.length === 2 ? ok("two slope planes built") : bad(`expected 2 slope planes, found ${planes.length}`);
+
+  for (const [i, plane] of planes.entries()) {
+    const half = plane.geometry.parameters.width / 2;
+    const a = new THREE.Vector3(-half, 0, 0).applyMatrix4(plane.matrixWorld);
+    const b = new THREE.Vector3(half, 0, 0).applyMatrix4(plane.matrixWorld);
+    const ridgeEnd = Math.abs(a.x) < Math.abs(b.x) ? a : b;
+    const eaveEnd = ridgeEnd === a ? b : a;
+    const drop = ridgeEnd.y - eaveEnd.y;
+    Math.abs(ridgeEnd.y - RISE) < 0.08
+      ? ok(`plane ${i + 1} high end sits at the ridge (y=${ridgeEnd.y.toFixed(2)} vs rise ${RISE})`)
+      : bad(`plane ${i + 1} ridge end at y=${ridgeEnd.y.toFixed(2)}, expected ${RISE}`);
+    Math.abs(eaveEnd.y) < 0.08
+      ? ok(`plane ${i + 1} eave end reaches the wall top (y=${eaveEnd.y.toFixed(2)})`)
+      : bad(`plane ${i + 1} eave end at y=${eaveEnd.y.toFixed(2)}, expected 0`);
+    drop > 1.5
+      ? ok(`plane ${i + 1} drops ${drop.toFixed(2)}m outward (Λ, not V)`)
+      : bad(`plane ${i + 1} only drops ${drop.toFixed(2)}m outward — roof is inverted`);
+  }
+
+  const box = new THREE.Box3().setFromObject(roof);
+  const spanX = box.max.x - box.min.x;
+  const spanZ = box.max.z - box.min.z;
+  Math.abs(spanX - (W + OVER * 2)) < 0.3
+    ? ok(`roof covers the full width: ${spanX.toFixed(2)}m across for a ${W}m house`)
+    : bad(`roof spans ${spanX.toFixed(2)}m across a ${W}m house — eaves wrong`);
+  Math.abs(spanZ - (D + OVER * 2)) < 0.3
+    ? ok(`roof covers the depth: ${spanZ.toFixed(2)}m along the ridge`)
+    : bad(`roof ridge span ${spanZ.toFixed(2)}m, expected ${(D + OVER * 2).toFixed(2)}m`);
+
+  // gable triangles must stay under the rake, not spike through it
+  const gables = roof.children.filter((c) => c.isMesh && c.geometry?.type === "ShapeGeometry");
+  const top = Math.max(...gables.map((g) => new THREE.Box3().setFromObject(g).max.y));
+  Math.abs(top - RISE) < 0.05
+    ? ok(`gable apex sits at the ridge height (${top.toFixed(2)}m), not through the roof`)
+    : bad(`gable apex at ${top.toFixed(2)}m vs ridge ${RISE}m`);
+
+  // ridgeAlong "x" is used by the hall and the store
+  const hallRoof = gableRoof(16, 24, 3.4, mat, 0.8, "x");
+  hallRoof.updateMatrixWorld(true);
+  const hb = new THREE.Box3().setFromObject(hallRoof);
+  hb.max.x - hb.min.x > hb.max.z - hb.min.z
+    ? ok("ridgeAlong='x' puts the long span along X (hall + store roofline)")
+    : bad("ridgeAlong='x' did not rotate the roof");
+}
+
+{
+  // every house in the scene must be roofed by the same helper, and none may
+  // poke absurdly high above its walls
+  let checked = 0;
+  for (const h of world3d.houses) {
+    const box = new THREE.Box3().setFromObject(h.group);
+    const height = box.max.y;
+    if (height > 9.5) bad(`a house roof reaches ${height.toFixed(1)}m — that is not a roof`);
+    else checked++;
+  }
+  ok(`${checked}/${world3d.houses.length} house roofs sit within a believable height`);
+
+  const hallBox = new THREE.Box3().setFromObject(world3d.hall.group);
+  hallBox.max.y < 14
+    ? ok(`hall roofline tops out at ${hallBox.max.y.toFixed(1)}m`)
+    : bad(`hall roof is ${hallBox.max.y.toFixed(1)}m tall`);
+}
 
 /* ------------------------------------------------------------------- clock */
 section("24-hour clock");
