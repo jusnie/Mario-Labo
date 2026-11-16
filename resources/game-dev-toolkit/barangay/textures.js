@@ -389,6 +389,56 @@ export function glassPane() {
   return tex;
 }
 
+/**
+ * Terrain grain for the horizon range. Deliberately neutral in hue: the vertex
+ * colours decide rock / forest / silt, this only breaks the surface up at the
+ * scale of a canopy or a scree slope. Without it a 200 m ridge lit by one
+ * directional light is a smooth pastel shape.
+ */
+export function mountainDetail(repeat = 1) {
+  const key = `mtndetail${repeat}`;
+  if (cache.has(key)) return cache.get(key);
+  const size = 512;
+  const { c, ctx } = canvas(size);
+  ctx.fillStyle = "#9a9a90";
+  ctx.fillRect(0, 0, size, size);
+  const r = rnd(404);
+  // broad tonal drift first
+  for (let i = 0; i < 22; i++) {
+    const x = r() * size;
+    const y = r() * size;
+    const rad = 50 + r() * 150;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+    const dark = r() < 0.55;
+    g.addColorStop(0, dark ? "rgba(96,100,88,0.35)" : "rgba(180,182,172,0.28)");
+    g.addColorStop(1, "rgba(154,154,144,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  // canopy clumps and scree
+  speckle(ctx, size, 2600, ["#7e8374", "#a9ab9e", "#6d7364", "#b4b5a8"], 2, 9, 405);
+  // drainage lines running down the slope
+  const rr = rnd(406);
+  ctx.lineCap = "round";
+  for (let i = 0; i < 60; i++) {
+    let x = rr() * size;
+    let y = rr() * size;
+    ctx.strokeStyle = rr() < 0.7 ? "rgba(86,92,80,0.12)" : "rgba(190,190,178,0.09)";
+    ctx.lineWidth = 0.8 + rr() * 2.2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    for (let k = 0; k < 6; k++) {
+      x += (rr() - 0.5) * 18;
+      y += 8 + rr() * 26;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  const tex = finish(c, repeat);
+  cache.set(key, tex);
+  return tex;
+}
+
 export function plaster(repeat = 4) {
   if (cache.has("plaster" + repeat)) return cache.get("plaster" + repeat);
   const size = 512;

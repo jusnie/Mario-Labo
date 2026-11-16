@@ -1117,9 +1117,9 @@ function buildBackdrop(scene) {
   // displaced terrain ring: flat where the village is, hills then mountains out
   const terrain = horizonTerrain({
     innerRadius: LAYOUT.groundRadius,
-    outerRadius: 1000,
-    radialSteps: 56,
-    segments: 184,
+    outerRadius: 1750,
+    radialSteps: 128,
+    segments: 640,
     seed: 2024,
     // the ring is built around the same centre as the flat ground disc, so its
     // hole sits exactly over the village. Offsetting the mesh as well doubled
@@ -1451,13 +1451,20 @@ export function buildWorld(scene, opts = {}) {
     sun.target.position.set(0, 0, 0);
 
     // long sight lines by day so the hall reads at the end of the road
-    scene.fog.color.copy(pal.horizon).lerp(pal.haze, 0.35);
-    scene.fog.near = 40 + day * 55;
-    scene.fog.far = 300 + day * 650;
+    // Aerial perspective, not a white-out. The old curve (300..950 m by day)
+    // put the whole range at 60-100% fog, which is why every ridge came out the
+    // same pastel cut-out. The colour also sits a little below the sky it is
+    // seen against, so a backlit ridge still reads as a silhouette.
+    scene.fog.color.copy(pal.horizon).lerp(pal.haze, 0.3).multiplyScalar(0.82);
+    scene.fog.near = 90 + day * 110;
+    scene.fog.far = 900 + day * 1900;
 
-    hemi.intensity = 0.16 + day * 0.78;
+    // Skylight is the fill in the tropics: without a real GI pass, a slope
+    // facing away from the sun is lit by nothing else, and mountains went to
+    // near-black at midday.
+    hemi.intensity = 0.16 + day * 1.15;
     hemi.color.copy(pal.top).lerp(white, 0.35);
-    hemi.groundColor.setHex(0x5a4f3c).lerp(new THREE.Color(0x2a2418), night);
+    hemi.groundColor.setHex(0x6b5f45).lerp(new THREE.Color(0x2a2418), night);
     ambient.intensity = 0.12 + day * 0.2;
 
     // the sun loses almost all of its punch as it reddens at the horizon

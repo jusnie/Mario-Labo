@@ -139,6 +139,60 @@ const W = 1100 * SS;
 const H = 680 * SS;
 const LIGHT = new THREE.Vector3(0.45, 0.82, 0.36).normalize();
 
+const acesOne = (x) => Math.min(1, Math.max(0, (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14)));
+const encodeSRGB = (v) => Math.pow(Math.min(1, Math.max(0, v)), 1 / 2.2);
+const toLinear = (v) => Math.pow(v, 2.2);
+const EXPOSURE = Number(process.env.PREVIEW_EXPOSURE ?? 1.05);
+
+/**
+ * The scene's own lights, so previews are exposed the way the game exposes
+ * them: sun + sky/ground hemisphere + ambient, diffuse = albedo * irradiance,
+ * then ACES and sRGB exactly like the renderer. Judging "too dark" or "too
+ * pale" against a made-up shading term is how the mountains got left pastel.
+ */
+function sceneLighting(scene) {
+  const sun = { dir: LIGHT.clone(), color: new THREE.Color(0xffffff), intensity: 1 };
+  const hemi = { sky: new THREE.Color(0xffffff), ground: new THREE.Color(0x333333), intensity: 0 };
+  const ambient = { color: new THREE.Color(0xffffff), intensity: 0 };
+  let found = false;
+  scene.traverse((o) => {
+    if (o.isDirectionalLight && o.intensity > 0 && !found) {
+      sun.dir.copy(o.position).normalize();
+      sun.color.copy(o.color);
+      sun.intensity = o.intensity;
+      found = true;
+    } else if (o.isDirectionalLight && o.intensity > 0) {
+      // a second directional light (the moon): add it in
+      sun.color.lerp(o.color, 0.35);
+      sun.intensity += o.intensity * 0.5;
+    } else if (o.isHemisphereLight) {
+      hemi.sky.copy(o.color);
+      hemi.ground.copy(o.groundColor);
+      hemi.intensity = o.intensity;
+    } else if (o.isAmbientLight) {
+      ambient.color.copy(o.color);
+      ambient.intensity = o.intensity;
+    }
+  });
+  if (!found) {
+    // standalone previews (a house on its own) carry no lights: give them the
+    // world's midday rig rather than rendering a black box
+    const dir = new THREE.Vector3();
+    const u = createSkyUniforms();
+    updatePalette(u, skyHour);
+    dir.copy(u.sunDir.value);
+    sun.dir.copy(dir);
+    sun.color.setHex(0xfff2d8);
+    sun.intensity = 2.35;
+    hemi.sky.copy(u.topColor.value).lerp(new THREE.Color(0xffffff), 0.35);
+    hemi.ground.setHex(0x6b5f45);
+    hemi.intensity = 1.15;
+    ambient.color.setHex(0x334455);
+    ambient.intensity = 0.32;
+  }
+  return { sun, hemi, ambient };
+}
+
 /** Flat colour for a material, approximating what the map would have been. */
 function materialColour(mat) {
   const c = new THREE.Color(1, 1, 1);
@@ -187,6 +241,22 @@ function render(scene, camera, outPath) {
 
   const view = camera.matrixWorldInverse;
   const proj = camera.projectionMatrix;
+  // linear fog, so a preview shows the same atmospheric perspective the game does
+  const lights = sceneLighting(scene);
+  const fogColor = new THREE.Color();
+  if (scene.fog) {
+    fogColor.copy(scene.fog.color).convertLinearToSRGB();
+    fogColor.setRGB(fogColor.r * 255, fogColor.g * 255, fogColor.b * 255, THREE.LinearSRGBColorSpace);
+  }
+  const fogNear = scene.fog?.near ?? 1e9;
+  const fogFar = scene.fog?.far ?? 1e10;
+  const fogAt = (depth) => {
+    if (!scene.fog) return 0;
+    return Math.min(1, Math.max(0, (depth - fogNear) / (fogFar - fogNear)));
+  };
+  const fogR = scene.fog ? Math.min(255, fogColor.r) : 0;
+  const fogG = scene.fog ? Math.min(255, fogColor.g) : 0;
+  const fogB = scene.fog ? Math.min(255, fogColor.b) : 0;
   const a = new THREE.Vector3();
   const b = new THREE.Vector3();
   const c = new THREE.Vector3();
@@ -242,13 +312,29 @@ function render(scene, camera, outPath) {
       b.fromBufferAttribute(pos, ib).applyMatrix4(mw);
       c.fromBufferAttribute(pos, ic).applyMatrix4(mw);
 
-      // face normal + a little two-sided shading
+      // face normal
       e1.subVectors(b, a);
       e2.subVectors(c, a);
       n.crossVectors(e1, e2).normalize();
       if (n.dot(e1.subVectors(eye, a)) < 0) n.negate();
-      const lambert = 0.5 + 0.62 * Math.max(0, n.dot(LIGHT));
-      const shade = Math.min(1.25, lambert);
+      // irradiance from the scene's own lights, in linear space
+      const ndl = Math.max(0, n.dot(lights.sun.dir));
+      const upness = 0.5 + 0.5 * n.y;
+      const irrR =
+        (lights.sun.color.r * lights.sun.intensity * ndl +
+          (lights.hemi.ground.r + (lights.hemi.sky.r - lights.hemi.ground.r) * upness) * lights.hemi.intensity +
+          lights.ambient.color.r * lights.ambient.intensity) /
+        Math.PI;
+      const irrG =
+        (lights.sun.color.g * lights.sun.intensity * ndl +
+          (lights.hemi.ground.g + (lights.hemi.sky.g - lights.hemi.ground.g) * upness) * lights.hemi.intensity +
+          lights.ambient.color.g * lights.ambient.intensity) /
+        Math.PI;
+      const irrB =
+        (lights.sun.color.b * lights.sun.intensity * ndl +
+          (lights.hemi.ground.b + (lights.hemi.sky.b - lights.hemi.ground.b) * upness) * lights.hemi.intensity +
+          lights.ambient.color.b * lights.ambient.intensity) /
+        Math.PI;
 
       // camera space, then clip against the near plane. Without this the big
       // ground disc and the road vanish as soon as one corner passes the camera.
@@ -297,9 +383,9 @@ function render(scene, camera, outPath) {
         cg = (vcol.getY(ia) + vcol.getY(ib) + vcol.getY(ic)) / 3;
         cb = (vcol.getZ(ia) + vcol.getZ(ib) + vcol.getZ(ic)) / 3;
       }
-      const rr = Math.min(255, cr * shade * 255);
-      const gg = Math.min(255, cg * shade * 255);
-      const bb = Math.min(255, cb * shade * 255);
+      const rr = 0; // computed per pixel below (needs the albedo from the map)
+      const gg = 0;
+      const bb = 0;
 
       for (let f = 1; f + 1 < screen.length; f++) {
         const A = screen[0];
@@ -336,9 +422,9 @@ function render(scene, camera, outPath) {
             const tu = (w0 * ua + w1 * ub + w2 * uc) * z;
             const tv = (w0 * va + w1 * vb + w2 * vc) * z;
             sampleTexture(tdata, tu, tv, texPixel);
-            const r0 = Math.min(255, cr * texPixel[0] * shade * 255);
-            const g0 = Math.min(255, cg * texPixel[1] * shade * 255);
-            const b0 = Math.min(255, cb * texPixel[2] * shade * 255);
+            const r0 = encodeSRGB(acesOne(cr * toLinear(texPixel[0]) * irrR * EXPOSURE)) * 255;
+            const g0 = encodeSRGB(acesOne(cg * toLinear(texPixel[1]) * irrG * EXPOSURE)) * 255;
+            const b0 = encodeSRGB(acesOne(cb * toLinear(texPixel[2]) * irrB * EXPOSURE)) * 255;
             if (alphaBlend) {
               // contact shadows and other transparent decals: blend, no depth write
               const al = texPixel[3] * (mat.opacity ?? 1);
@@ -351,9 +437,21 @@ function render(scene, camera, outPath) {
               colour[ci + 2] = b0;
             }
           } else {
-            colour[ci] = rr;
-            colour[ci + 1] = gg;
-            colour[ci + 2] = bb;
+            colour[ci] = encodeSRGB(acesOne(cr * irrR * EXPOSURE)) * 255;
+            colour[ci + 1] = encodeSRGB(acesOne(cg * irrG * EXPOSURE)) * 255;
+            colour[ci + 2] = encodeSRGB(acesOne(cb * irrB * EXPOSURE)) * 255;
+          }
+          if (mat.emissive && mat.emissiveIntensity > 0) {
+            const e = mat.emissiveIntensity;
+            colour[ci] = Math.min(255, colour[ci] + encodeSRGB(acesOne(mat.emissive.r * e * EXPOSURE)) * 255 * 0.6);
+            colour[ci + 1] = Math.min(255, colour[ci + 1] + encodeSRGB(acesOne(mat.emissive.g * e * EXPOSURE)) * 255 * 0.6);
+            colour[ci + 2] = Math.min(255, colour[ci + 2] + encodeSRGB(acesOne(mat.emissive.b * e * EXPOSURE)) * 255 * 0.6);
+          }
+          const f = fogAt(z);
+          if (f > 0) {
+            colour[ci] += (fogR - colour[ci]) * f;
+            colour[ci + 1] += (fogG - colour[ci + 1]) * f;
+            colour[ci + 2] += (fogB - colour[ci + 2]) * f;
           }
         }
       }

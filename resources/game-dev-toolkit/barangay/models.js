@@ -1276,13 +1276,13 @@ export function mergeStaticGroup(group) {
  */
 export function horizonTerrain({
   innerRadius = 200,
-  outerRadius = 1000,
-  radialSteps = 56,
-  segments = 184,
+  outerRadius = 1750,
+  radialSteps = 128,
+  segments = 640,
   seed = 2024,
-  grassColor = 0x5c6a3c,
-  hillColor = 0x3d4b2c,
-  rockColor = 0x6a6d68,
+  grassColor = 0x70803f,
+  hillColor = 0x55643a,
+  rockColor = 0x9a9c93,
   sedimentColor = 0x6d6a4e,
   hazeColor = 0xa9b8c2,
   centerZ = -110,
@@ -1291,6 +1291,7 @@ export function horizonTerrain({
   const noise = makeNoise(seed);
   const pos = [];
   const colors = [];
+  const uvs = [];
   const idx = [];
   const cGrass = new THREE.Color(grassColor);
   const cHill = new THREE.Color(hillColor);
@@ -1348,40 +1349,69 @@ export function horizonTerrain({
     const mask = rangeMask(x, z);
     const peaks = Math.pow(crest(x, z, 0.00155, 4), 1.75) * 200 * rangeT * mask;
     const secondLine = Math.pow(crest(x + 260, z - 140, 0.0031, 3), 2.1) * 78 * rangeT * mask;
+    // spurs and gullies: two finer ridged octaves, so crests are serrated
+    // rather than a smooth arc and the flanks carry their own shadows
+    const spurs = Math.pow(crest(x - 90, z + 210, 0.0068, 2), 3.0) * 30 * rangeT * mask;
+    const ribs = Math.pow(crest(x + 40, z - 60, 0.0175, 2), 3.4) * 9 * rangeT * mask;
     const grain = (noise.fbm(x * 0.0062, z * 0.0062, 3) - 0.5) * 26 * rangeT * (0.3 + 0.7 * mask);
+    // A farther, lower range. Combined with max() rather than added, it stays
+    // below the volcano and only shows through the gaps in the near ridges --
+    // which is what makes a skyline read as layer behind layer.
+    const farT = THREE.MathUtils.smoothstep(r, 1050, 1500);
+    const farPeaks = Math.pow(crest(x * 0.58 + 610, z * 0.58 - 340, 0.0012, 4), 1.5) * 232 * farT;
     // max() rather than sum: the cone has to win where it is taller, and its
     // base has to disappear into the range instead of sitting in a moat
-    return rolling + Math.max(peaks + secondLine + grain, volcanoAt(x, z));
+    return rolling + Math.max(Math.max(peaks + secondLine + spurs + ribs + grain, farPeaks), volcanoAt(x, z));
   };
 
+  const radii = new Float32Array(radialSteps + 1);
+  const grid = new Float32Array((radialSteps + 1) * segments);
   for (let i = 0; i <= radialSteps; i++) {
     // log spacing: dense near the village, coarse at the horizon
     const t = i / radialSteps;
-    const r = innerRadius + (outerRadius - innerRadius) * Math.pow(t, 1.9);
+    const r = innerRadius + (outerRadius - innerRadius) * Math.pow(t, 1.7);
+    radii[i] = r;
     for (let j = 0; j < segments; j++) {
       const a = (j / segments) * Math.PI * 2;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r + centerZ;
       const y = heightAt(x, z, r);
+      grid[i * segments + j] = y;
       pos.push(x, y, z);
+      // one detail tile every 62 m of ground
+      uvs.push(x / 62, z / 62);
+    }
+  }
 
-      // --- slope, from finite differences, so crags read as rock and valleys
-      //     as silt rather than every peak getting the same tint
-      const e = 5;
-      const gx = (heightAt(x + e, z, r) - heightAt(x - e, z, r)) / (2 * e);
-      const gz = (heightAt(x, z + e, r) - heightAt(x, z - e, r)) / (2 * e);
-      const slope = Math.hypot(gx, gz);
+  // slope from the grid itself rather than four extra height-field samples per
+  // vertex: the range is 60k vertices, and five evaluations each was most of a
+  // second of boot time for no visible gain
+  const hAt = (i, j) => grid[Math.min(radialSteps, Math.max(0, i)) * segments + ((j % segments) + segments) % segments];
+  for (let i = 0; i <= radialSteps; i++) {
+    const r = radii[i];
+    const dr = i > 0 && i < radialSteps ? (radii[i + 1] - radii[i - 1]) / 2 : (outerRadius - innerRadius) / radialSteps;
+    const ds = (Math.PI * 2 * r) / segments;
+    for (let j = 0; j < segments; j++) {
+      const y = hAt(i, j);
+      const x = pos[(i * segments + j) * 3];
+      const z = pos[(i * segments + j) * 3 + 2];
+      const gRad = (hAt(i + 1, j) - hAt(i - 1, j)) / (2 * Math.max(1, dr));
+      const gAng = (hAt(i, j + 1) - hAt(i, j - 1)) / (2 * Math.max(1, ds));
+      const slope = Math.hypot(gRad, gAng);
       const mottle = noise.fbm(x * 0.018, z * 0.018, 2);
 
       tmp.copy(cGrass).lerp(cHill, THREE.MathUtils.smoothstep(y, 3, 60));
       tmp.lerp(cSediment, THREE.MathUtils.smoothstep(mottle, 0.62, 0.9) * 0.35 * (1 - THREE.MathUtils.smoothstep(y, 90, 160)));
-      tmp.lerp(cRock, THREE.MathUtils.smoothstep(slope, 0.5, 1.15));
+      tmp.lerp(cRock, THREE.MathUtils.smoothstep(slope, 0.45, 1.05));
       tmp.lerp(cRock, THREE.MathUtils.smoothstep(y, 150, 265) * 0.55);
       // forest speckle on the sheltered mid slopes: reads as canopy at distance
       tmp2.copy(cHill).multiplyScalar(0.78);
       tmp.lerp(tmp2, THREE.MathUtils.smoothstep(mottle, 0.45, 0.8) * (1 - THREE.MathUtils.smoothstep(slope, 0.55, 1)) * 0.5);
+      // valley floors sit a touch darker than the crests: gentle ambient
+      // occlusion, and it keeps the range from reading as one flat tone
+      tmp.multiplyScalar(1 - (1 - THREE.MathUtils.smoothstep(y, 10, 190)) * 0.1);
       // aerial perspective, so the far crests sit behind the near ones
-      tmp.lerp(cHaze, THREE.MathUtils.smoothstep(r, 560, 990) * 0.62);
+      tmp.lerp(cHaze, THREE.MathUtils.smoothstep(r, 620, 1010) * 0.2);
       colors.push(tmp.r, tmp.g, tmp.b);
     }
   }
@@ -1398,9 +1428,17 @@ export function horizonTerrain({
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: false });
+  const mat = new THREE.MeshStandardMaterial({
+    map: TEX.mountainDetail(1),
+    normalMap: TEX.noiseNormal({ repeat: 1, strength: 0.9, scale: 22, seed: 33 }),
+    normalScale: new THREE.Vector2(0.35, 0.35),
+    vertexColors: true,
+    roughness: 1,
+    flatShading: false,
+  });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = false;
   mesh.name = "horizonTerrain";

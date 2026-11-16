@@ -185,14 +185,47 @@ What is there now:
 (using the CPU mirror, so it works without a GPU), and `SKY_HOUR=18.4 node
 tools/preview.mjs street` renders any scene preview under that hour's sky.
 
+## The mountains
+
+The range is a displaced terrain ring (`horizonTerrain` in `models.js`), and it
+used to read as a row of pale paper cut-outs: every ridge the same tone, no
+surface, and — because the old fog curve put the whole range at 60-100 % fog by
+day — a flat pastel silhouette that floated *lighter* than the sky behind it.
+
+What changed:
+
+- **fog is aerial perspective again, not a white-out.** By day it now runs
+  about 200 m to 2800 m instead of 95 m to 950 m, and its colour sits a little
+  below the sky it is seen against, so a backlit ridge stays a silhouette while
+  a sunlit one keeps its colour.
+- **a real surface**: `mountainDetail()` lays canopy mottle, scree and drainage
+  lines over the range on world-space UVs (one tile per 62 m), with a value-noise
+  normal map on top, so the slopes are not one flat wash under the sun.
+- **rock where rock belongs**: slope comes from the mesh grid itself (not four
+  extra height-field samples per vertex — that was most of a second of boot time
+  for nothing) and steep faces turn to rock, sheltered mid slopes stay forest,
+  valley floors go a touch darker.
+- **serrated crests**: two finer ridged octaves (`spurs`, `ribs`) sit on top of
+  the main range, so a skyline is crags and gullies rather than a smooth arc.
+- **a second, farther range** behind the first, lower than the volcano and
+  combined with `max()` rather than added, so it shows through the gaps in the
+  near ridges — the layer behind layer that reads as distance.
+- **skylight is the fill**: the hemisphere light was raised to ~1.15 at midday,
+  because without a GI pass a slope facing away from the sun is lit by nothing
+  else and went to near-black.
+- resolution is up to 128 x 640, and the volcano keeps its gullied flanks and
+  the notched crater that makes it the landmark.
+
 ## Looking at the build without a browser
 
 There is no Chromium or WebGL in this environment, so `tools/preview.mjs`
 rasterises the real scene to PNG in software: z-buffer, near-plane clipping,
 perspective-correct UVs, **texture sampling**, instanced meshes and vertex
-colours. Shadows, fog and the sky shader are still missing, and shading is a
-single directional term, so it judges *form, scale and material*, not the final
-light.
+colours. It also applies the scene's own fog and its own lights — sun,
+hemisphere and ambient, then ACES and sRGB exactly like the renderer — because
+judging "too dark" or "too pale" against a made-up shading term is how the
+mountains got left as pastel cut-outs. Shadows are still missing (`PREVIEW_SS=1`
+for a quick, aliased render, `PREVIEW_EXPOSURE` to override exposure).
 
 ```bash
 node tools/preview.mjs house       # preview-house.png
