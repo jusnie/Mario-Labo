@@ -127,6 +127,7 @@ function sampleTexture(t, u, v, out) {
 }
 
 const THREE = await import("three");
+const { createSkyUniforms, updatePalette, sampleSky } = await import("../barangay/sky.js");
 const { buildWorld, buildHouse, buildHall, LAYOUT } = await import("../barangay/world.js");
 const { gardenBed } = await import("../barangay/models.js");
 const { createStore } = await import("../barangay/places.js");
@@ -155,17 +156,32 @@ function render(scene, camera, outPath) {
 
   const colour = new Uint8ClampedArray(W * H * 3);
   const depth = new Float32Array(W * H).fill(Infinity);
-  // sky gradient
-  for (let y = 0; y < H; y++) {
-    const t = y / H;
-    const r = 168 + (108 - 168) * t;
-    const g = 197 + (150 - 197) * t;
-    const b = 220 + (196 - 220) * t;
-    for (let x = 0; x < W; x++) {
-      const i = (y * W + x) * 3;
-      colour[i] = r;
-      colour[i + 1] = g;
-      colour[i + 2] = b;
+
+  // sky: the same palette and the same sampler the shader uses, evaluated per
+  // pixel through the camera basis. `skyHour` picks the time of day.
+  const skyU = createSkyUniforms();
+  updatePalette(skyU, skyHour);
+  const tanHalf = Math.tan((camera.fov * Math.PI) / 180 / 2);
+  const aspect = W / H;
+  const basis = new THREE.Matrix4().extractRotation(camera.matrixWorld);
+  const right = new THREE.Vector3(1, 0, 0).applyMatrix4(basis);
+  const up = new THREE.Vector3(0, 1, 0).applyMatrix4(basis);
+  const fwd = new THREE.Vector3(0, 0, -1).applyMatrix4(basis);
+  {
+    const out = { r: 0, g: 0, b: 0 };
+    for (let y = 0; y < H; y++) {
+      const sy = (0.5 - (y + 0.5) / H) * 2 * tanHalf;
+      for (let x = 0; x < W; x++) {
+        const sx = ((x + 0.5) / W - 0.5) * 2 * tanHalf * aspect;
+        const dx = fwd.x + right.x * sx + up.x * sy;
+        const dy = fwd.y + right.y * sx + up.y * sy;
+        const dz = fwd.z + right.z * sx + up.z * sy;
+        sampleSky(dx, dy, dz, skyU, out);
+        const i = (y * W + x) * 3;
+        colour[i] = out.r;
+        colour[i + 1] = out.g;
+        colour[i + 2] = out.b;
+      }
     }
   }
 
@@ -347,6 +363,89 @@ function render(scene, camera, outPath) {
     }
   });
 
+  /* ------------------------------------------------------------- sprites
+   * Clouds are Sprites, and a sprite is just a camera-facing quad. Project it,
+   * sample the cloud map, alpha-blend over whatever is already there. Without
+   * this the previewer could never be used to judge cloud placement or tint.
+   */
+  const spriteList = [];
+  scene.traverse((obj) => {
+    if (obj.isSprite && obj.visible !== false) spriteList.push(obj);
+  });
+  const spritePixel = [0, 0, 0, 1];
+  const camPos = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+  for (const sp of spriteList) {
+    const mat = sp.material;
+    const tex = textureData(mat.map);
+    if (!tex) continue;
+    const centre = new THREE.Vector3().setFromMatrixPosition(sp.matrixWorld);
+    if (centre.distanceTo(camPos) < 1) continue;
+    const hw = sp.scale.x / 2;
+    const hh = sp.scale.y / 2;
+    const corners = [
+      { world: centre.clone().addScaledVector(right, -hw).addScaledVector(up, -hh), uv: [0, 0] },
+      { world: centre.clone().addScaledVector(right, hw).addScaledVector(up, -hh), uv: [1, 0] },
+      { world: centre.clone().addScaledVector(right, hw).addScaledVector(up, hh), uv: [1, 1] },
+      { world: centre.clone().addScaledVector(right, -hw).addScaledVector(up, hh), uv: [0, 1] },
+    ].map((c) => {
+      const vp = c.world.clone().applyMatrix4(camera.matrixWorldInverse);
+      if (vp.z > -0.4) return null; // behind the camera: skip the whole quad
+      const pv = vp.clone().applyMatrix4(proj);
+      const iz = 1 / -vp.z;
+      return {
+        x: (pv.x * 0.5 + 0.5) * W,
+        y: (0.5 - pv.y * 0.5) * H,
+        z: iz,
+        u: c.uv[0] * iz,
+        v: c.uv[1] * iz,
+        iz,
+      };
+    });
+    if (corners.some((c) => !c)) continue;
+    const tint = mat.color ?? { r: 1, g: 1, b: 1 };
+    const tri = [[0, 1, 2], [0, 2, 3]];
+    for (const [i0, i1, i2] of tri) {
+      const A = corners[i0];
+      const B = corners[i1];
+      const C = corners[i2];
+      const minX = Math.max(0, Math.floor(Math.min(A.x, B.x, C.x)));
+      const maxX = Math.min(W - 1, Math.ceil(Math.max(A.x, B.x, C.x)));
+      const minY = Math.max(0, Math.floor(Math.min(A.y, B.y, C.y)));
+      const maxY = Math.min(H - 1, Math.ceil(Math.max(A.y, B.y, C.y)));
+      const area = (B.x - A.x) * (C.y - A.y) - (C.x - A.x) * (B.y - A.y);
+      if (Math.abs(area) < 1e-9 || maxX < minX || maxY < minY) continue;
+      const inv = 1 / area;
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          const px = x + 0.5;
+          const py = y + 0.5;
+          const w0 = ((B.x - px) * (C.y - py) - (C.x - px) * (B.y - py)) * inv;
+          const w1 = ((C.x - px) * (A.y - py) - (A.x - px) * (C.y - py)) * inv;
+          const w2 = 1 - w0 - w1;
+          if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+          const iz = w0 * A.iz + w1 * B.iz + w2 * C.iz;
+          if (iz <= 0) continue;
+          const di = y * W + x;
+          const z = 1 / iz;
+          if (z >= depth[di]) continue;
+          const tu = (w0 * A.u + w1 * B.u + w2 * C.u) * z;
+          const tv = (w0 * A.v + w1 * B.v + w2 * C.v) * z;
+          sampleTexture(tex, tu, tv, spritePixel);
+          const al = spritePixel[3] * (mat.opacity ?? 1);
+          if (al < 0.004) continue;
+          const ci = di * 3;
+          const r0 = spritePixel[0] * tint.r * 255;
+          const g0 = spritePixel[1] * tint.g * 255;
+          const b0 = spritePixel[2] * tint.b * 255;
+          colour[ci] = colour[ci] * (1 - al) + r0 * al;
+          colour[ci + 1] = colour[ci + 1] * (1 - al) + g0 * al;
+          colour[ci + 2] = colour[ci + 2] * (1 - al) + b0 * al;
+        }
+      }
+      drawn++;
+    }
+  }
+
   // decodeAudioData-style PPM out, then let ImageMagick do the PNG
   const header = Buffer.from(`P6\n${W} ${H}\n255\n`, "latin1");
   const ppm = `/tmp/preview-${outPath.split("/").pop().replace(/\.png$/, "")}.ppm`;
@@ -375,6 +474,8 @@ function ground(scene, colour = 0x6f7a4e, size = 900) {
 }
 
 const which = process.argv[2] ?? "house";
+/** time of day used for the sky in every preview (the game starts at 17.5) */
+const skyHour = Number(process.env.SKY_HOUR ?? 17.5);
 
 if (which === "house" || which === "all") {
   const scene = new THREE.Scene();

@@ -720,12 +720,13 @@ export function philippineFlag() {
 }
 
 /** Soft drifting cloud puff with alpha. */
-export function cloud() {
-  if (cache.has("cloud")) return cache.get("cloud");
+export function cloud(seed = 3) {
+  const key = `cloud${seed}`;
+  if (cache.has(key)) return cache.get(key);
   const size = 512;
   const { c, ctx } = canvas(size);
   ctx.clearRect(0, 0, size, size);
-  const r = rnd(3);
+  const r = rnd(seed);
 
   // Billows: a heap of soft circles along a horizontal axis, tallest in the
   // middle. Solid rather than translucent, so the sprite does not wash out to
@@ -777,7 +778,44 @@ export function cloud() {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
-  cache.set("cloud", tex);
+  cache.set(key, tex);
+  return tex;
+}
+
+/**
+ * Cirrus: drawn-out wisps of ice crystal cloud, high and thin. Stretching the
+ * cumulus sprite was the wrong answer -- it looked like a smeared photograph --
+ * so this is its own texture: long soft streaks, feathered at both ends.
+ */
+export function cirrus(seed = 11) {
+  const key = `cirrus${seed}`;
+  if (cache.has(key)) return cache.get(key);
+  const w = 512;
+  const h = 128;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, w, h);
+  const r = rnd(seed);
+  for (let i = 0; i < 46; i++) {
+    const y = h * (0.25 + r() * 0.5);
+    const x0 = r() * w;
+    const len = w * (0.15 + r() * 0.5);
+    const thick = 2 + r() * 9;
+    const g = ctx.createLinearGradient(x0, 0, x0 + len, 0);
+    g.addColorStop(0, "rgba(255,255,255,0)");
+    g.addColorStop(0.45, `rgba(255,255,255,${0.10 + r() * 0.3})`);
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(x0 + len / 2, y, len / 2, thick, (r() - 0.5) * 0.08, 0, 6.28);
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  cache.set(key, tex);
   return tex;
 }
 

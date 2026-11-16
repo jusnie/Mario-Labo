@@ -17,6 +17,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import * as TEX from "./textures.js";
+import { SKY_FRAG, SKY_VERT, createSkyUniforms, updatePalette, sunDirAt } from "./sky.js";
 import {
   gableRoof,
   hipRoof,
@@ -101,30 +102,8 @@ const rngFactory = (seed) => {
 export const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
 /* --------------------------------------------------------------- sky + clock */
-const SKY_VERT = /* glsl */ `
-  varying vec3 vDir;
-  void main() {
-    vDir = position;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-const SKY_FRAG = /* glsl */ `
-  varying vec3 vDir;
-  uniform vec3 topColor;
-  uniform vec3 horizonColor;
-  uniform vec3 sunColor;
-  uniform vec3 sunDir;
-  uniform float sunGlow;
-  void main() {
-    vec3 d = normalize(vDir);
-    float up = max(d.y, 0.0);
-    vec3 col = mix(horizonColor, topColor, pow(up, 0.55));
-    float sun = pow(max(dot(d, normalize(sunDir)), 0.0), 350.0);
-    float halo = pow(max(dot(d, normalize(sunDir)), 0.0), 8.0) * 0.10;
-    col += sunColor * (sun * 3.0 + halo) * sunGlow;
-    gl_FragColor = vec4(col, 1.0);
-  }
-`;
+// The dome itself lives in sky.js (shaders, palette and a CPU mirror), so the
+// offscreen previewer can show exactly what the GPU draws.
 
 export class WorldClock {
   /** minutes since midnight; one real second = one in-game minute */
@@ -1150,52 +1129,101 @@ function buildBackdrop(scene) {
   terrain.position.z = 0;
   scene.add(terrain);
 
-  // clouds
-  const cloudTex = TEX.cloud();
+  // clouds: cumulus around the whole horizon, plus a thin cirrus deck above
+  const cloudTexes = [TEX.cloud(3), TEX.cloud(17), TEX.cloud(29)];
+  const cirrusTexes = [TEX.cirrus(5), TEX.cirrus(19)];
   const clouds = [];
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < 16; i++) {
+    const base = 0.35 + r() * 0.28;
     const mat = new THREE.SpriteMaterial({
-      map: cloudTex,
+      map: cloudTexes[i % cloudTexes.length],
       transparent: true,
-      opacity: 0.35 + r() * 0.3,
+      opacity: base,
       depthWrite: false,
       fog: false,
       color: 0xffffff,
     });
     const sprite = new THREE.Sprite(mat);
-    const scale = 60 + r() * 120;
+    const scale = 150 + r() * 260;
     sprite.scale.set(scale, scale * 0.5, 1);
-    sprite.position.set(-380 + r() * 760, 70 + r() * 70, -60 - r() * 700);
+    const az = r() * Math.PI * 2;
+    const rad = 430 + r() * 400;
+    // high enough to sit above the ridge line, not on it
+    sprite.position.set(Math.sin(az) * rad, 150 + r() * 180, Math.cos(az) * rad);
     scene.add(sprite);
-    clouds.push({ sprite, speed: 0.9 + r() * 1.6, drift: r() * 100 });
+    clouds.push({ sprite, speed: 0.9 + r() * 1.6, drift: r() * 100, baseOpacity: base, layer: "cumulus" });
+  }
+  for (let i = 0; i < 9; i++) {
+    const base = 0.28 + r() * 0.3;
+    const mat = new THREE.SpriteMaterial({
+      map: cirrusTexes[i % cirrusTexes.length],
+      transparent: true,
+      opacity: base,
+      depthWrite: false,
+      fog: false,
+      color: 0xffffff,
+    });
+    const sprite = new THREE.Sprite(mat);
+    const scale = 420 + r() * 380;
+    sprite.scale.set(scale, scale * 0.26, 1);
+    const az = r() * Math.PI * 2;
+    const rad = 380 + r() * 400;
+    sprite.position.set(Math.sin(az) * rad, 300 + r() * 150, Math.cos(az) * rad);
+    scene.add(sprite);
+    clouds.push({ sprite, speed: 1.6 + r() * 2.2, drift: r() * 100, baseOpacity: base, layer: "cirrus" });
   }
 
-  // stars
-  const starCount = 1400;
-  const positions = new Float32Array(starCount * 3);
-  for (let i = 0; i < starCount; i++) {
-    const theta = r() * Math.PI * 2;
-    const phi = Math.acos(r() * 0.95);
-    const rad = 820;
-    positions[i * 3] = Math.sin(phi) * Math.cos(theta) * rad;
-    positions[i * 3 + 1] = Math.cos(phi) * rad * 0.9 + 20;
-    positions[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * rad;
+  // stars: three size bands with a little colour spread, dimmer low down where
+  // the atmosphere eats them
+  const stars = [];
+  let starMat = null;
+  const bands = [
+    { count: 900, size: 1.5, opacity: 1.0 },
+    { count: 380, size: 2.6, opacity: 1.0 },
+    { count: 120, size: 4.0, opacity: 1.0 },
+  ];
+  for (const band of bands) {
+    const positions = new Float32Array(band.count * 3);
+    const colors = new Float32Array(band.count * 3);
+    for (let i = 0; i < band.count; i++) {
+      const theta = r() * Math.PI * 2;
+      const phi = Math.acos(r() * 0.98);
+      const rad = 820;
+      const x = Math.sin(phi) * Math.cos(theta) * rad;
+      const y = Math.cos(phi) * rad * 0.95 + 10;
+      const z = Math.sin(phi) * Math.sin(theta) * rad;
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = z;
+      // brightness spread, and the odd warm or blue giant
+      const b = 0.45 + r() * 0.55;
+      const tint = r();
+      const cr = b * (tint > 0.85 ? 1.0 : 0.85 + r() * 0.1);
+      const cg = b * (0.9 + r() * 0.1);
+      const cb = b * (tint < 0.2 ? 1.0 : 0.95 + r() * 0.1);
+      colors[i * 3] = cr;
+      colors[i * 3 + 1] = cg;
+      colors[i * 3 + 2] = cb;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      size: band.size,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      fog: false,
+      vertexColors: true,
+    });
+    const pts = new THREE.Points(geo, mat);
+    scene.add(pts);
+    stars.push(pts);
+    if (band.count === 380) starMat = mat;
   }
-  const starGeo = new THREE.BufferGeometry();
-  starGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const starMat = new THREE.PointsMaterial({
-    color: 0xdfe9ff,
-    size: 2.1,
-    sizeAttenuation: true,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    fog: false,
-  });
-  const stars = new THREE.Points(starGeo, starMat);
-  scene.add(stars);
 
-  return { terrain, clouds, stars, starMat };
+  return { terrain, clouds, stars, starMat, starMats: stars.map((p) => p.material) };
 }
 
 /* ------------------------------------------------------------------- build */
@@ -1205,13 +1233,7 @@ export function buildWorld(scene, opts = {}) {
   scene.fog = new THREE.Fog(0xcfd8dc, 55, 620);
 
   /* sky dome */
-  const skyUniforms = {
-    topColor: { value: new THREE.Color(0x3f74b8) },
-    horizonColor: { value: new THREE.Color(0xd7d9d2) },
-    sunColor: { value: new THREE.Color(0xffe6b0) },
-    sunDir: { value: new THREE.Vector3(0.4, 0.5, -0.6) },
-    sunGlow: { value: 1 },
-  };
+  const skyUniforms = createSkyUniforms();
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(900, 32, 20),
     new THREE.ShaderMaterial({
@@ -1409,60 +1431,41 @@ export function buildWorld(scene, opts = {}) {
 
   const windowMats = [...hall.glass, ...houses.flatMap((h) => h.glass)];
 
-  /* palette */
-  const dayTop = new THREE.Color(0x3f74b8);
-  const dayHorizon = new THREE.Color(0xd9dcd6);
-  const duskTop = new THREE.Color(0x2f4478);
-  const duskHorizon = new THREE.Color(0xe0996a);
-  const nightTop = new THREE.Color(0x05080f);
-  const nightHorizon = new THREE.Color(0x131d2e);
-  const tmpA = new THREE.Color();
-  const tmpB = new THREE.Color();
-
   const state = { clock, colliders, hall, houses, groveCount, fields, hemi, sun, moon, ambient, sky: skyUniforms, terrain: backdrop.terrain };
 
   const sunPos = new THREE.Vector3();
   const moonPos = new THREE.Vector3();
+  const white = new THREE.Color(0xffffff);
+  const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
   function updateLighting() {
-    const day = clock.daylight;
     const h = clock.hours;
-    const a = ((h - 6) / 12) * Math.PI;
-    sunPos.set(Math.cos(a) * 260, Math.sin(a) * 300, -120);
+    // sky palette: shader uniforms, fog colour, light colours, all from one model
+    const pal = updatePalette(skyUniforms, h);
+    const day = pal.day;
+    const night = pal.night;
+    const dusk = pal.gold;
+
+    sunDirAt(h, sunPos).multiplyScalar(340);
     sun.position.copy(sunPos);
-    skyUniforms.sunDir.value.copy(sunPos).normalize();
-
-    const dusk = Math.max(0, 1 - Math.abs(Math.sin(a)) * 3.2) * (day > 0.02 ? 1 : 0);
-
-    if (day > 0.02) {
-      tmpA.copy(dayTop);
-      tmpB.copy(duskTop);
-      skyUniforms.topColor.value.copy(tmpA.lerp(tmpB, dusk));
-      tmpA.copy(dayHorizon);
-      tmpB.copy(duskHorizon);
-      skyUniforms.horizonColor.value.copy(tmpA.lerp(tmpB, dusk));
-    } else {
-      skyUniforms.topColor.value.copy(nightTop);
-      skyUniforms.horizonColor.value.copy(nightHorizon);
-    }
-    skyUniforms.sunColor.value.setHex(dusk > 0.4 ? 0xff9a4d : 0xffe9c4);
-    skyUniforms.sunGlow.value = Math.max(0, day) * (1 - dusk * 0.35);
+    sun.target.position.set(0, 0, 0);
 
     // long sight lines by day so the hall reads at the end of the road
-    scene.fog.color.copy(skyUniforms.horizonColor.value).multiplyScalar(0.96);
+    scene.fog.color.copy(pal.horizon).lerp(pal.haze, 0.35);
     scene.fog.near = 40 + day * 55;
     scene.fog.far = 300 + day * 650;
 
-    hemi.intensity = 0.22 + day * 0.72;
-    hemi.color.copy(skyUniforms.topColor.value).lerp(new THREE.Color(0xffffff), 0.35);
-    ambient.intensity = 0.18 + day * 0.22;
+    hemi.intensity = 0.16 + day * 0.78;
+    hemi.color.copy(pal.top).lerp(white, 0.35);
+    hemi.groundColor.setHex(0x5a4f3c).lerp(new THREE.Color(0x2a2418), night);
+    ambient.intensity = 0.12 + day * 0.2;
 
-    sun.intensity = day * (2.35 - dusk * 0.5);
-    sun.color.setHex(dusk > 0.45 ? 0xffb070 : 0xfff2d8);
-    const night = 1 - day;
+    // the sun loses almost all of its punch as it reddens at the horizon
+    sun.intensity = day * (2.35 - dusk * 0.75);
+    sun.color.copy(pal.sun);
     moonPos.copy(sunPos).multiplyScalar(-1);
     moon.position.copy(moonPos);
-    moon.intensity = night * 0.42;
+    moon.intensity = night * 0.5;
     moon.color.setHex(0xa8bfe8);
 
     const glow = THREE.MathUtils.clamp((0.55 - day) / 0.45, 0, 1);
@@ -1472,11 +1475,32 @@ export function buildWorld(scene, opts = {}) {
       lamp.light.intensity = glow * 12;
     }
 
-    backdrop.starMat.opacity = THREE.MathUtils.clamp((0.35 - day) / 0.35, 0, 1) * 0.95;
-    backdrop.stars.visible = backdrop.starMat.opacity > 0.01;
+    const starFade = THREE.MathUtils.clamp((0.30 - day) / 0.30, 0, 1) * 0.95;
+    // each size band breathes at its own rate: a faint shimmer rather than the
+    // whole sky pulsing in unison
+    backdrop.starMats.forEach((mat, i) => {
+      mat.opacity = starFade * (0.88 + 0.12 * Math.sin(clock.minutes * 0.05 + i * 2.1));
+    });
+    for (const pts of backdrop.stars) pts.visible = starFade > 0.01;
+
+    // clouds take their colour from the sky they sit in: hazy grey-blue by day,
+    // rimmed with the sunset colour when the sun is low, almost gone at night
+    const sunAzimuth = Math.atan2(skyUniforms.sunDir.value.x, skyUniforms.sunDir.value.z);
     for (const c of backdrop.clouds) {
-      c.sprite.material.color.copy(skyUniforms.horizonColor.value).lerp(new THREE.Color(0xffffff), 0.55);
-      c.sprite.material.opacity = 0.18 + day * 0.42;
+      const p = c.sprite.position;
+      const az = Math.atan2(p.x, p.z);
+      const toSun = Math.max(0, Math.cos(az - sunAzimuth));
+      const mat = c.sprite.material;
+      // only the clouds on the sun's side actually catch the sunset colour;
+      // tinting every cloud with it turned the whole sky mauve
+      mat.color.copy(pal.haze).lerp(white, 0.35 + 0.45 * day);
+      mat.color.lerp(pal.sun, clamp01(dusk * (0.08 + 0.62 * toSun)));
+      if (c.layer === "cirrus") {
+        mat.color.lerp(pal.sun, clamp01(dusk * (0.1 + 0.5 * toSun)));
+        mat.opacity = (0.1 + day * 0.16) * (c.baseOpacity ?? 1);
+      } else {
+        mat.opacity = (0.16 + day * 0.4) * (c.baseOpacity ?? 1);
+      }
     }
     sky.position.copy(opts.cameraPosition ?? new THREE.Vector3());
   }

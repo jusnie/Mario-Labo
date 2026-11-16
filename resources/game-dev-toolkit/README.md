@@ -149,6 +149,42 @@ house read as one:
   sheltered mid slopes, silt in the valleys, and an aerial-perspective lerp
   toward haze with distance, so far crests sit behind near ones.
 
+## The sky
+
+`barangay/sky.js` owns the dome: the shaders, the palette and a CPU mirror of the
+fragment shader. The old dome was `mix(horizon, zenith, pow(up, 0.55))` with a
+soft dot for the sun — a flat wash with no haze, no twilight, no disc and no
+moon, and — because a raw `ShaderMaterial` gets neither from the renderer — no
+tonemapping, so it never matched the exposure of the ground it met.
+
+What is there now:
+
+- **an exponential vertical gradient**, so the deep blue sits high overhead and
+  the horizon stays pale.
+- **a Mie haze band** hugging the horizon, of the width you get in a humid
+  tropical valley at sea level.
+- **warm scattering toward the sun's azimuth**, strongest low down, plus a warm
+  wash that only exists near the horizon at dawn and dusk (tinting the whole
+  gradient with it turned the mid sky mauve).
+- **a real sun disc** — about 1.4° across, deliberately a little generous, blown
+  out to white by ACES — with three scales of bloom around it.
+- **a full moon disc** and its halo at night, on the same axis as the moon light.
+- **twilight**: a wedge of warm colour on the sun's side and a violet belt on
+  the other, appearing only while the sun is within a few degrees of the
+  horizon; twelve degrees below it there is nothing left but deep blue.
+- **ACES tonemapping and sRGB encoding inside the shader**, so the dome and the
+  ground go through the same exposure.
+- **clouds take their colour from the sky they sit in**: hazy grey-blue by day,
+  catching the sunset only on the sun's side, almost gone at night. Cumulus is
+  billows with a shadowed underside and a sunlit crown; cirrus is its own wispy
+  texture, high up, not a stretched cumulus.
+- **stars in three size bands** with a brightness and colour spread, dimmer near
+  the horizon, each band shimmering at its own rate.
+
+`tools/sky-preview.mjs` renders the dome at a sequence of hours side by side
+(using the CPU mirror, so it works without a GPU), and `SKY_HOUR=18.4 node
+tools/preview.mjs street` renders any scene preview under that hour's sky.
+
 ## Looking at the build without a browser
 
 There is no Chromium or WebGL in this environment, so `tools/preview.mjs`
@@ -168,6 +204,9 @@ node tools/preview.mjs store
 node tools/preview.mjs garden
 node tools/preview.mjs mountains
 node tools/preview.mjs all
+
+node tools/sky-preview.mjs          # preview-sky.png: 05:12 .. 18:18 side by side
+SKY_HOUR=6.4 node tools/preview.mjs street   # any preview, under any hour's sky
 ```
 
 Textures only appear if the optional `@napi-rs/canvas` package is installed
@@ -287,6 +326,7 @@ resources/game-dev-toolkit/
   walkthrough-test.mjs                 headless route test (no browser needed)
   tools/preview.mjs                    software renderer: scene -> PNG, no GPU
   tools/dumptex.mjs                    one procedural texture -> PNG, for inspection
+  tools/sky-preview.mjs                the sky dome at six times of day
   tools/fetch-oculus-audio.mjs        re-downloads the 57 vendored sound effects
   assets/audio/oculus/                57 Ogg recordings, LICENSE (CC BY 4.0), MANIFEST.json
   assets/characters/cc0/              models, animations, catalogs, licences

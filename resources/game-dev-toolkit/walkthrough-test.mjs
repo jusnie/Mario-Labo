@@ -639,6 +639,42 @@ for (const hour of [0, 5, 6.5, 12, 17.5, 19, 23.5]) {
   }
 }
 frameErrors === 0 ? ok("world.update() ran clean at 7 times of day (140 frames)") : null;
+
+/* -------------------------------------------------------------------- the sky */
+{
+  const { createSkyUniforms, updatePalette, sampleSky } = await import("./barangay/sky.js");
+  const u = createSkyUniforms();
+  const lum = (o) => 0.2126 * o.r + 0.7152 * o.g + 0.0722 * o.b;
+  const at = (h, dir) => {
+    updatePalette(u, h);
+    const out = { r: 0, g: 0, b: 0 };
+    sampleSky(dir[0], dir[1], dir[2], u, out);
+    return out;
+  };
+  const noonUp = at(12, [0, 1, 0]);
+  const noonHor = at(12, [0, 0.02, -1]);
+  noonUp.b > noonUp.r + 40
+    ? ok("midday sky overhead is blue, not grey")
+    : bad(`midday zenith is not blue: ${[noonUp.r, noonUp.g, noonUp.b].map(Math.round)}`);
+  lum(noonHor) > lum(noonUp)
+    ? ok("the horizon is brighter than the zenith at midday (haze)")
+    : bad("no horizon haze at midday");
+
+  const midnight = at(0, [0, 1, 0]);
+  lum(midnight) < 24 ? ok("midnight sky is dark") : bad(`midnight sky too bright: ${lum(midnight).toFixed(0)}`);
+  u.moonGlow.value > 0.6 ? ok("the moon is up at midnight") : bad("no moon at midnight");
+
+  const dusk = at(18.4, [0, 0.05, -1]);
+  dusk.r > dusk.b + 30 ? ok("sunset horizon is warmer than it is blue") : bad("sunset horizon is not warm");
+  u.twilight.value > 0.25
+    ? ok(`twilight is lit (${u.twilight.value.toFixed(2)})`)
+    : bad("no twilight at 18:24");
+
+  updatePalette(u, 16);
+  const out = { r: 0, g: 0, b: 0 };
+  sampleSky(u.sunDir.value.x, u.sunDir.value.y, u.sunDir.value.z, u, out);
+  lum(out) > 250 ? ok("the sun disc blows out to white in its own direction") : bad(`the sun disc is dim: ${lum(out).toFixed(0)}`);
+}
 ok(
   `fog: night ${((40 + 0) * 1).toFixed(0)}m..${300}m, day 95m..950m ` +
     `(fog now ${scene.fog.near.toFixed(0)}..${scene.fog.far.toFixed(0)} at the last hour)`
