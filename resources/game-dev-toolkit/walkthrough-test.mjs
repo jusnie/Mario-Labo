@@ -148,14 +148,17 @@ walk.reached
 if (walk.minY < 0.5) bad(`player dropped below the ground (min y ${walk.minY.toFixed(2)})`);
 else ok("never fell through the ground");
 
-// 2. the hall must be solid
-const beforeHall = physics.body.translation();
+// 2. the hall must be solid — and its recessed entrance must be walkable
+const hallInfo = world3d.hall.group.userData.hall;
+const doorPlane = LAYOUT.hallZ + hallInfo.wallBack;
 const push = walkTo(0, LAYOUT.hallZ, 20, 2.55);
 const afterHall = physics.body.translation();
-const hallFront = LAYOUT.hallZ + LAYOUT.hallDepth / 2;
-afterHall.z > hallFront - 0.4
-  ? ok(`hall is solid — stopped at z=${afterHall.z.toFixed(2)}, front face z=${hallFront.toFixed(1)}`)
-  : bad(`walked into the hall: z=${afterHall.z.toFixed(2)} past front z=${hallFront.toFixed(1)}`);
+afterHall.z > doorPlane + 0.1
+  ? ok(`hall is solid — walked into the entrance bay and stopped at the doors, z=${afterHall.z.toFixed(2)}`)
+  : bad(`walked through the hall doors: z=${afterHall.z.toFixed(2)} past the door plane ${doorPlane.toFixed(1)}`);
+Math.abs(afterHall.y - 0.7 - hallInfo.floorH) < 0.08
+  ? ok(`climbed the four entrance steps onto the ${hallInfo.floorH}m plinth (floor ${(afterHall.y - 0.7).toFixed(2)}m)`)
+  : bad(`did not climb the hall steps (floor ${(afterHall.y - 0.7).toFixed(2)}m, plinth ${hallInfo.floorH}m)`);
 
 // 3. the store front is reachable from the road (interaction anchor in range)
 const storeAnchor = store.focusWorld;
@@ -554,6 +557,29 @@ section("roofs slope the right way");
   hallBox.max.y < 14
     ? ok(`hall roofline tops out at ${hallBox.max.y.toFixed(1)}m`)
     : bad(`hall roof is ${hallBox.max.y.toFixed(1)}m tall`);
+
+  // the remodelled hall, checked against the elevation sheet it was built from
+  const hall = world3d.hall.group.userData.hall;
+  const storeys = hall.upperH > 2.4 && hall.groundH > 2.4;
+  storeys ? ok(`two storeys: ${hall.groundH}m over ${hall.upperH}m, eaves at ${hall.wallTop}m`) : bad("hall is not two storeys");
+  hall.balconyY > hall.groundH && hall.balconyDepth > 1.6
+    ? ok(`balcony floor at ${hall.balconyY.toFixed(1)}m, ${hall.balconyDepth}m deep, ${hall.bayWidth}m wide`)
+    : bad(`balcony is wrong: y ${hall.balconyY}, depth ${hall.balconyDepth}`);
+  hall.balconyFront > hall.depth / 2 + 0.25
+    ? ok(`balcony stands ${(hall.balconyFront - hall.depth / 2).toFixed(1)}m proud of the front wall`)
+    : bad("balcony does not project past the facade");
+  hall.alcoveDepth > 1.5
+    ? ok(`entrance is recessed ${hall.alcoveDepth}m behind the columns`)
+    : bad(`entrance is not recessed (${hall.alcoveDepth}m)`);
+  const ridge = hall.ridgeHalfLength * 2;
+  ridge > 0 && ridge < hall.width - 2
+    ? ok(`hip roof: ${ridge.toFixed(1)}m ridge over a ${hall.width}m frontage (4 slopes, no gable)`)
+    : bad(`ridge is ${ridge.toFixed(1)}m on a ${hall.width}m building`);
+  hall.boxTop === undefined || true;
+  const apex = hall.wallTop + hall.roofRise;
+  apex > hall.wallTop + 2 && apex < 14
+    ? ok(`ridge peaks at ${apex.toFixed(1)}m, ${hall.roofRise}m above the eaves`)
+    : bad(`roof rise is ${hall.roofRise}m`);
 }
 
 /* ------------------------------------------------------------------- clock */

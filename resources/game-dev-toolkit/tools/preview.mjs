@@ -12,6 +12,8 @@
  *   node tools/preview.mjs street     -> preview-street.png
  *   node tools/preview.mjs mountains  -> preview-mountains.png
  *   node tools/preview.mjs porch      -> preview-porch.png
+ *   node tools/preview.mjs hall       -> preview-hall.png (hall on its own)
+ *   node tools/preview.mjs forecourt  -> preview-forecourt.png (hall in situ)
  *   node tools/preview.mjs all
  *
  * PNG encoding is delegated to ImageMagick (`convert`), which is present here;
@@ -39,7 +41,7 @@ const ctx2d = new Proxy(
 globalThis.document = { createElement: () => ({ width: 512, height: 512, getContext: () => ctx2d }) };
 
 const THREE = await import("three");
-const { buildWorld, buildHouse, LAYOUT } = await import("../barangay/world.js");
+const { buildWorld, buildHouse, buildHall, LAYOUT } = await import("../barangay/world.js");
 const { createStore } = await import("../barangay/places.js");
 
 const W = 1100;
@@ -114,7 +116,7 @@ function render(scene, camera, outPath) {
       e2.subVectors(c, a);
       n.crossVectors(e1, e2).normalize();
       if (n.dot(e1.subVectors(eye, a)) < 0) n.negate();
-      const lambert = 0.38 + 0.72 * Math.max(0, n.dot(LIGHT));
+      const lambert = 0.5 + 0.62 * Math.max(0, n.dot(LIGHT));
       const shade = Math.min(1.25, lambert);
 
       // camera space, then clip against the near plane. Without this the big
@@ -283,12 +285,27 @@ if (which === "street" || which === "all") {
 }
 
 if (which === "hall" || which === "all") {
+  // the hall on its own: from anywhere in the village the banana grove closes
+  // over the forecourt and hides the ground storey, which makes a poor portrait
   const scene = new THREE.Scene();
-  const world = buildWorld(scene, { startHour: 15 });
+  ground(scene);
+  const hall = buildHall(scene, []);
   render(
     scene,
-    cameraAt({ x: 7, y: 2.6, z: -250 }, { x: 0, y: 7, z: LAYOUT.hallZ }),
+    cameraAt({ x: 9, y: 3.6, z: LAYOUT.hallZ + 34 }, { x: 0, y: 4.9, z: LAYOUT.hallZ + 8 }, 40),
     "preview-hall.png"
+  );
+  void hall;
+}
+
+if (which === "forecourt" || which === "all") {
+  // what the player sees the moment the grove opens up: the hall in situ
+  const scene = new THREE.Scene();
+  const world = buildWorld(scene, { startHour: 16 });
+  render(
+    scene,
+    cameraAt({ x: 2.2, y: 1.7, z: LAYOUT.hallZ + 18 }, { x: 0, y: 5.4, z: LAYOUT.hallZ + 8 }, 82),
+    "preview-forecourt.png"
   );
   void world;
 }

@@ -159,7 +159,9 @@ ImageMagick:
 ```bash
 node tools/preview.mjs house       # preview-house.png
 node tools/preview.mjs street      # preview-street.png
-node tools/preview.mjs hall
+node tools/preview.mjs hall       # the hall on its own
+node tools/preview.mjs forecourt  # the hall as the grove opens up
+node tools/preview.mjs porch      # Ernie's porch
 node tools/preview.mjs store
 node tools/preview.mjs mountains
 node tools/preview.mjs all
@@ -175,10 +177,14 @@ The PNGs are gitignored — regenerate them whenever the modelling changes.
   140 m, at the end of a seamless road. Roughly 300 puno ng saging line both
   shoulders the whole way, with deeper groves behind them, three plant variants
   with tapered trunks and folded, wind-shredded leaves.
-- **The barangay hall**: two storeys, gable roof, blue trim, ten front windows,
-  side windows, double door, `BARANGAY KABUDOY` and `TANGGAPAN NG PUNONG
-  BARANGAY` signboards, entrance lamps that come on after dusk, an animated
-  Philippine flag on a 9.5 m pole, and a mown lawn. Solid to walk into.
+- **The barangay hall**: remodelled from the owner's elevation sheet — two
+  storeys on a raised plinth, a recessed entrance bay between square columns, a
+  balustraded balcony carrying the `BARANGAY KABUDOY` sign on its rail, side
+  verandas with their own canopies, louvred windows in dark frames, a hip roof
+  (`hipRoof`, four pitches, no gable) with 1.35 m eaves, `TANGGAPAN NG PUNONG
+  BARANGAY` over the doors, entrance lamps that come on after dusk, an animated
+  Philippine flag on an 11 m pole with its own plinth, hedges and a mown lawn.
+  Solid to walk into: four treads up the plinth, then the entrance bay.
 - Sari-sari store: nipa roof, porch posts, service counter, three shelves of
   products, hanging sachets, painted signboard, the long slatted side **upuan**
   (now sit-able), and the tindera's own back room with a **kusina** — the low

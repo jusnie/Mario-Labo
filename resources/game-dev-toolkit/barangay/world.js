@@ -19,6 +19,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import * as TEX from "./textures.js";
 import {
   gableRoof,
+  hipRoof,
   bladeGeometry,
   bladeClump,
   windowUnit,
@@ -39,7 +40,7 @@ import {
   makeGlassMaterial,
 } from "./models.js";
 
-export { gableRoof };
+export { gableRoof, buildHall };
 
 /**
  * Turn the local collider descriptors a builder emits into world-space ones,
@@ -724,158 +725,303 @@ function buildHall(scene, colliders) {
   const { hallZ, hallWidth: W, hallDepth: D } = LAYOUT;
   const group = new THREE.Group();
   group.position.set(0, 0, hallZ);
-  const floorH = 0.8;
-  const wallH = 7.4;
+
+  /* ---------------------------------------------------------------------
+   * Remodelled from the owner's elevation sheet: two storeys on a raised
+   * plinth, a recessed entrance bay between two square columns, a
+   * balustraded balcony with the barangay sign on its rail, side verandas
+   * with their own little canopies, louvred windows in dark frames, and a
+   * hip roof with wide eaves over the lot.
+   * ------------------------------------------------------------------- */
+  const floorH = 0.8; // plinth
+  const groundH = 3.6; // ground storey
+  const upperH = 3.2; // second storey
+  const balconyY = floorH + groundH; // storey band / balcony floor = 4.4
+  const wallTop = balconyY + upperH; // eaves = 7.6
+  const front = D / 2; // 8 — the front wall line
+  const alcove = 2.2; // how far the entrance is recessed
+  const bayW = 10; // width of the entrance bay / balcony
+  const porticoD = 2.2; // how far the balcony reaches out
+  const roofRise = 3.4;
+  const bayEdge = front + porticoD;
+  const wallBack = front - alcove;
+
   const hallGlass = makeGlassMaterial();
   const glass = [hallGlass];
 
   const concreteMat = new THREE.MeshStandardMaterial({ map: TEX.concrete(4), roughness: 0.95 });
+  const stoneMat = new THREE.MeshStandardMaterial({ map: TEX.concrete(2), color: 0xc2bcae, roughness: 1 });
   const wallMat = new THREE.MeshStandardMaterial({ map: TEX.plaster(3), color: 0xf1ece0, roughness: 0.9 });
-  const trimMat = new THREE.MeshStandardMaterial({ color: 0x1d3f8f, roughness: 0.7 });
-  const roofMat = new THREE.MeshStandardMaterial({ map: TEX.corrugated(6, "#8e6f5a"), roughness: 0.78, metalness: 0.14 });
-  const gableMat = new THREE.MeshStandardMaterial({ map: TEX.plaster(3), color: 0xefe9dc, roughness: 0.9 });
-
-  /* plinth + grand steps */
-  const plinth = new THREE.Mesh(new THREE.BoxGeometry(W + 3.2, floorH, D + 3.2), concreteMat);
-  plinth.position.y = floorH / 2;
-  plinth.receiveShadow = true;
-  group.add(plinth);
-  const entrance = stairs({ steps: 4, width: 8, rise: 0.2, run: 0.34, material: concreteMat });
-  entrance.position.set(0, 0, D / 2 + 3.1);
-  entrance.rotation.y = Math.PI;
-  group.add(entrance);
-
-
-  /* body */
-  const body = new THREE.Mesh(new THREE.BoxGeometry(W, wallH, D), wallMat);
-  body.position.y = floorH + wallH / 2;
-  body.castShadow = true;
-  body.receiveShadow = true;
-  group.add(body);
-  colliders.push({ half: [W / 2, wallH / 2 + floorH, D / 2], pos: [0, wallH / 2 + floorH, hallZ] });
-
-  /* storey band, plinth skirt and cornice */
-  const band = new THREE.Mesh(new THREE.BoxGeometry(W + 0.4, 0.34, D + 0.4), trimMat);
-  band.position.y = floorH + wallH * 0.55;
-  group.add(band);
-  const skirt = new THREE.Mesh(new THREE.BoxGeometry(W + 0.34, 0.55, D + 0.34), trimMat);
-  skirt.position.y = floorH + 0.1;
-  group.add(skirt);
-  const cornice = new THREE.Mesh(new THREE.BoxGeometry(W + 0.7, 0.26, D + 0.7), wallMat);
-  cornice.position.y = floorH + wallH - 0.16;
-  cornice.castShadow = true;
-  group.add(cornice);
-
-  /* portico: four posts carrying the front balcony */
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0x1b3b5a, roughness: 0.72 });
   const postMat = new THREE.MeshStandardMaterial({ color: 0xe9e3d4, roughness: 0.85 });
-  const porticoD = 2.6;
-  for (const sx of [-1, 1]) {
-    for (const t of [0.33, 0.66]) {
-      const p = post({ height: floorH + wallH * 0.56, radius: 0.19, material: postMat });
-      p.position.set(sx * W * t, floorH, D / 2 + porticoD);
-      group.add(p);
-      colliders.push({ half: [0.24, (floorH + wallH * 0.56) / 2, 0.24], pos: [sx * W * t, (floorH + wallH * 0.56) / 2, hallZ + D / 2 + porticoD], tag: "column" });
-    }
-  }
-  const balcony = new THREE.Mesh(new THREE.BoxGeometry(W + 1.4, 0.2, porticoD + 0.6), concreteMat);
-  balcony.position.set(0, floorH + wallH * 0.57, D / 2 + porticoD / 2);
-  balcony.castShadow = true;
-  balcony.receiveShadow = true;
-  group.add(balcony);
-  const balustrade = railing({ length: W + 1.2, height: 1.0, spacing: 0.26, material: postMat });
-  balustrade.position.set(0, floorH + wallH * 0.58, D / 2 + porticoD - 0.1);
-  group.add(balustrade);
-
-  /* roof */
-  const rise = 3.4;
-  const roofGroup = gableRoof({
-    width: D,
-    depth: W,
-    rise,
-    material: roofMat,
-    overhang: 0.85,
-    ridgeAlong: "x",
-    gableMaterial: gableMat,
-    bargeBoards: true,
-    rafters: true,
+  const frameColor = 0x30343a;
+  const roofMat = new THREE.MeshStandardMaterial({
+    map: TEX.corrugated(6, "#8a968f"),
+    roughness: 0.68,
+    metalness: 0.18,
   });
-  roofGroup.position.y = floorH + wallH;
-  group.add(roofGroup);
 
-  /* windows */
-  const front = D / 2 + 0.02;
-  const upperY = floorH + wallH * 0.72;
-  const lowerY = floorH + wallH * 0.3;
-  for (let i = 0; i < 5; i++) {
-    const w = windowUnit({ width: 1.25, height: 1.35, sill: true, glassMaterial: hallGlass });
-    w.position.set(-W / 2 + (W / 6) * (i + 1), upperY, front);
-    group.add(w);
+  const add = (mesh) => {
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    return mesh;
+  };
+
+  /* ---------------------------------------------------------------- plinth */
+  add(new THREE.Mesh(new THREE.BoxGeometry(W + 3.2, floorH, D + 3.2), concreteMat)).position.y = floorH / 2;
+  colliders.push({
+    half: [(W + 3.2) / 2, floorH / 2, (D + 3.2) / 2],
+    pos: [0, floorH / 2, hallZ],
+    tag: "hall-plinth",
+  });
+
+  // entrance steps: four treads up to the plinth, climbing toward the doors
+  const stepCount = 4;
+  const stepRise = floorH / stepCount;
+  const stepRun = 0.34;
+  const stepZ = D / 2 + 1.6 + 3.5 * stepRun;
+  const entrance = stairs({ steps: stepCount, width: 8, rise: stepRise, run: stepRun, material: concreteMat });
+  entrance.position.set(0, 0, stepZ);
+  group.add(entrance);
+  for (let i = 0; i < stepCount; i++) {
+    const top = (i + 1) * stepRise;
+    colliders.push({
+      half: [4, top / 2, stepRun / 2],
+      pos: [0, top / 2, hallZ + stepZ - i * stepRun],
+      tag: "hall-step",
+    });
   }
-  for (let i = 0; i < 4; i++) {
-    const x = -W / 2 + (W / 5) * (i + 1);
-    if (Math.abs(x) < 2.4) continue;
-    const w = windowUnit({ width: 1.15, height: 1.2, sill: true, glassMaterial: hallGlass });
-    w.position.set(x, lowerY, front);
-    group.add(w);
+
+  /* -------------------------------------------------------- ground storey */
+  const sideW = (W - bayW) / 2;
+  for (const sx of [-1, 1]) {
+    const block = add(new THREE.Mesh(new THREE.BoxGeometry(sideW, groundH, D), wallMat));
+    block.position.set(sx * (bayW / 2 + sideW / 2), floorH + groundH / 2, 0);
+    colliders.push({
+      half: [sideW / 2, (groundH + floorH) / 2, D / 2],
+      pos: [sx * (bayW / 2 + sideW / 2), (floorH + groundH) / 2, hallZ],
+      tag: "hall",
+    });
   }
-  for (const side of [-1, 1]) {
-    for (let i = 0; i < 3; i++) {
-      const w = windowUnit({ width: 1.1, height: 1.15, sill: true, glassMaterial: hallGlass });
-      w.position.set(side * (W / 2 + 0.02), upperY, -D / 2 + (D / 4) * (i + 1));
-      w.rotation.y = (side * Math.PI) / 2;
-      group.add(w);
+  const backDepth = wallBack + D / 2;
+  const backBlock = add(new THREE.Mesh(new THREE.BoxGeometry(bayW, groundH, backDepth), wallMat));
+  backBlock.position.set(0, floorH + groundH / 2, (wallBack - D / 2) / 2);
+  colliders.push({
+    half: [bayW / 2, (groundH + floorH) / 2, backDepth / 2],
+    pos: [0, (floorH + groundH) / 2, hallZ + (wallBack - D / 2) / 2],
+    tag: "hall",
+  });
+
+  // stone skirt around the base and the blue belt at the storey line
+  add(new THREE.Mesh(new THREE.BoxGeometry(W + 0.34, 0.5, D + 0.34), stoneMat)).position.y = floorH + 0.25;
+  add(new THREE.Mesh(new THREE.BoxGeometry(W + 0.36, 0.3, D + 0.36), trimMat)).position.y = balconyY;
+
+  /* ---------------------------------------------------------- upper storey */
+  const upper = add(new THREE.Mesh(new THREE.BoxGeometry(W, upperH, D), wallMat));
+  upper.position.y = balconyY + upperH / 2;
+  colliders.push({ half: [W / 2, upperH / 2, D / 2], pos: [0, balconyY + upperH / 2, hallZ], tag: "hall" });
+
+  const cornice = add(new THREE.Mesh(new THREE.BoxGeometry(W + 0.62, 0.3, D + 0.62), wallMat));
+  cornice.position.y = wallTop - 0.16;
+  add(new THREE.Mesh(new THREE.BoxGeometry(W + 0.3, 0.16, D + 0.3), trimMat)).position.y = wallTop - 0.42;
+
+  /* --------------------------------------- entrance bay, columns, balcony */
+  const columnH = balconyY - floorH;
+  const columnX = bayW / 2 - 0.55;
+  const columnZ = bayEdge - 0.6;
+  for (const sx of [-1, 1]) {
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.34, 0.78), postMat)).position.set(sx * columnX, floorH + 0.17, columnZ);
+    const shaft = add(new THREE.Mesh(new THREE.BoxGeometry(0.54, columnH - 0.56, 0.54), postMat));
+    shaft.position.set(sx * columnX, floorH + 0.34 + (columnH - 0.56) / 2, columnZ);
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.22, 0.72), postMat)).position.set(
+      sx * columnX,
+      floorH + columnH - 0.11,
+      columnZ
+    );
+    colliders.push({
+      half: [0.28, columnH / 2, 0.28],
+      pos: [sx * columnX, floorH + columnH / 2, hallZ + columnZ],
+      tag: "column",
+    });
+  }
+
+  // balcony slab — the canopy over the entrance and the floor of the balcony
+  const slab = add(new THREE.Mesh(new THREE.BoxGeometry(bayW + 0.7, 0.26, porticoD + 0.5), concreteMat));
+  slab.position.set(0, balconyY - 0.13, front + porticoD / 2 - 0.05);
+  add(new THREE.Mesh(new THREE.BoxGeometry(bayW + 0.8, 0.1, porticoD + 0.6), trimMat)).position.set(
+    0,
+    balconyY - 0.3,
+    front + porticoD / 2 - 0.05
+  );
+  colliders.push({
+    half: [(bayW + 0.7) / 2, 0.13, (porticoD + 0.5) / 2],
+    pos: [0, balconyY - 0.13, hallZ + front + porticoD / 2 - 0.05],
+    tag: "balcony",
+  });
+
+  // balustrade: front run plus the two returns to the wall
+  const railH = 0.95;
+  const frontRail = railing({ length: bayW + 0.5, height: railH, spacing: 0.2, material: postMat });
+  frontRail.position.set(0, balconyY, bayEdge - 0.08);
+  group.add(frontRail);
+  for (const sx of [-1, 1]) {
+    const side = railing({ length: porticoD - 0.1, height: railH, spacing: 0.2, material: postMat });
+    side.position.set(sx * (bayW / 2 + 0.24), balconyY, front + porticoD / 2 - 0.05);
+    side.rotation.y = Math.PI / 2;
+    group.add(side);
+  }
+
+  // the sign hangs on the balcony rail, facing the road
+  const signTex = TEX.sign("BARANGAY KABUDOY", { size: 104, bg: "#f7f3e6", border: "#1b3b5a", fg: "#12265c" });
+  const signBoard = add(new THREE.Mesh(new THREE.BoxGeometry(6.6, 1.0, 0.1), postMat));
+  signBoard.position.set(0, balconyY + 0.5, bayEdge - 0.06);
+  const signPanel = new THREE.Mesh(
+    new THREE.PlaneGeometry(6.44, 0.86),
+    new THREE.MeshStandardMaterial({ map: signTex, roughness: 0.8 })
+  );
+  signPanel.position.set(0, balconyY + 0.5, bayEdge + 0.005);
+  group.add(signPanel);
+
+  /* ------------------------------------------------------------ side wings */
+  for (const sx of [-1, 1]) {
+    const wingX = W / 2 + 1.35;
+    const wing = add(new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.24, 5.6), concreteMat));
+    wing.position.set(sx * wingX, balconyY - 0.12, 0.4);
+    colliders.push({
+      half: [1.35, 0.12, 2.8],
+      pos: [sx * wingX, balconyY - 0.12, hallZ + 0.4],
+      tag: "veranda",
+    });
+    // columns down to the plinth
+    for (const sz of [-1, 1]) {
+      const col = add(new THREE.Mesh(new THREE.BoxGeometry(0.44, balconyY - floorH - 0.24, 0.44), postMat));
+      col.position.set(sx * (W / 2 + 2.35), floorH + (balconyY - floorH - 0.24) / 2, 0.4 + sz * 2.3);
+      colliders.push({
+        half: [0.24, (balconyY - floorH) / 2, 0.24],
+        pos: [sx * (W / 2 + 2.35), floorH + (balconyY - floorH) / 2, hallZ + 0.4 + sz * 2.3],
+        tag: "column",
+      });
+    }
+    // balustrade on the outer edge and the two ends
+    const outer = railing({ length: 5.5, height: 0.9, spacing: 0.2, material: postMat });
+    outer.position.set(sx * (W / 2 + 2.62), balconyY, 0.4);
+    outer.rotation.y = Math.PI / 2;
+    group.add(outer);
+    for (const sz of [-1, 1]) {
+      const end = railing({ length: 2.6, height: 0.9, spacing: 0.2, material: postMat });
+      end.position.set(sx * wingX, balconyY, 0.4 + sz * 2.72);
+      group.add(end);
+    }
+    // small canopy over each wing, carried by two slim posts
+    for (const sz of [-1, 1]) {
+      const p = add(new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, 2.4, 8), postMat));
+      p.position.set(sx * (W / 2 + 2.35), balconyY + 1.2, 0.4 + sz * 2.3);
+    }
+    const canopy = hipRoof({
+      width: 3.4,
+      depth: 6.2,
+      rise: 0.85,
+      overhang: 0.3,
+      material: roofMat,
+    });
+    canopy.position.set(sx * (W / 2 + 1.35), balconyY + 2.35, 0.4);
+    group.add(canopy);
+  }
+
+  /* ---------------------------------------------------------------- windows */
+  const louvre = (w, h, x, y, z, rotY = 0) => {
+    const win = windowUnit({
+      width: w,
+      height: h,
+      sill: true,
+      louvres: true,
+      mullions: false,
+      frameColor,
+      glassMaterial: hallGlass,
+    });
+    win.position.set(x, y, z);
+    win.rotation.y = rotY;
+    group.add(win);
+  };
+  const upperSill = balconyY + 1.75;
+  const lowerSill = floorH + 1.85;
+  for (const sx of [-1, 1]) {
+    louvre(1.7, 1.5, sx * 3.6, upperSill, front + 0.02);
+    louvre(1.7, 1.5, sx * 8.3, upperSill, front + 0.02);
+    louvre(1.9, 1.45, sx * 7.2, lowerSill, front + 0.02);
+    louvre(1.9, 1.45, sx * 10.4, lowerSill, front + 0.02);
+    for (const z of [-4.6, 0, 4.6]) {
+      louvre(1.45, 1.35, sx * (W / 2 + 0.02), upperSill, z, (sx * Math.PI) / 2);
+    }
+    for (const z of [-3.4, 3.4]) {
+      louvre(1.6, 1.3, sx * (W / 2 + 0.02), lowerSill, z, (sx * Math.PI) / 2);
     }
   }
+  // a small window over the door on the upper floor
+  louvre(1.2, 0.9, 0, balconyY + 2.5, front + 0.02);
+  // balcony door (glass, opens onto the balcony)
+  const balconyDoor = doorUnit({ width: 1.7, height: 2.4, color: "#2e4652", glassOut: glass });
+  balconyDoor.position.set(0, balconyY + 0.02, front + 0.03);
+  group.add(balconyDoor);
 
-  /* double door */
+  /* ------------------------------------------------------- entrance doors */
   const doorGroup = new THREE.Group();
   for (const sx of [-1, 1]) {
-    const leaf = doorUnit({ width: 1.35, height: 2.9, color: "#5c3f28" });
-    leaf.position.set(sx * 0.72, floorH, front + 0.04);
-    leaf.scale.set(1, 1, 1);
+    const leaf = doorUnit({ width: 1.32, height: 2.9, color: "#5c3f28", glassOut: glass });
+    leaf.position.set(sx * 0.7, floorH, wallBack + 0.05);
     doorGroup.add(leaf);
   }
   group.add(doorGroup);
+  // transom over the doors, so the big opening reads like a public building
+  const transom = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 0.6), hallGlass);
+  transom.position.set(0, floorH + 3.24, wallBack + 0.06);
+  group.add(transom);
+  add(new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.12, 0.24), concreteMat)).position.set(0, floorH + 2.98, wallBack + 0.1);
 
-  /* signboards */
-  const signTex = TEX.sign("BARANGAY KABUDOY", { size: 104, bg: "#f7f3e6", border: "#1d3f8f", fg: "#12265c" });
-  const signPanel = new THREE.Mesh(
-    new THREE.PlaneGeometry(7.4, 1.85),
-    new THREE.MeshStandardMaterial({ map: signTex, roughness: 0.8 })
-  );
-  signPanel.position.set(0, floorH + wallH * 0.45, front + 0.06);
-  group.add(signPanel);
   const subTex = TEX.sign("TANGGAPAN NG PUNONG BARANGAY", { size: 54, bg: "#12307a", border: "#f7f3e6", fg: "#f7f3e6" });
   const subPanel = new THREE.Mesh(
-    new THREE.PlaneGeometry(6.0, 1.0),
+    new THREE.PlaneGeometry(4.4, 0.66),
     new THREE.MeshStandardMaterial({ map: subTex, roughness: 0.8 })
   );
-  subPanel.position.set(0, floorH + wallH * 0.9, front + 0.06);
+  subPanel.position.set(0, floorH + 3.72, wallBack + 0.05);
   group.add(subPanel);
 
-  /* flagpole with a finial */
+  /* ------------------------------------------------------------------ roof */
+  const roof = hipRoof({
+    width: W + 0.4,
+    depth: D + 0.4,
+    rise: roofRise,
+    overhang: 1.35,
+    material: roofMat,
+  });
+  roof.position.y = wallTop;
+  group.add(roof);
+
+  /* ------------------------------------------------- flagpole on its plinth */
   const poleMat = new THREE.MeshStandardMaterial({ color: 0xd7d9dc, roughness: 0.4, metalness: 0.6 });
-  const poleX = W / 2 + 3.2;
-  const poleZ = D / 2 + 3.4;
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.1, 10, 12), poleMat);
-  pole.position.set(poleX, floorH + 5, poleZ);
+  const poleX = W / 2 + 3.4;
+  const poleZ = front + 4.6;
+  add(new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.36, 1.5), concreteMat)).position.set(poleX, 0.18, poleZ);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.1, 10.4, 12), poleMat);
+  pole.position.set(poleX, 5.4, poleZ);
   pole.castShadow = true;
   group.add(pole);
   const finial = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), poleMat);
-  finial.position.set(poleX, floorH + 10.05, poleZ);
+  finial.position.set(poleX, 10.68, poleZ);
   group.add(finial);
-  const flagGeo = new THREE.PlaneGeometry(2.4, 1.2, 16, 8);
   const flag = new THREE.Mesh(
-    flagGeo,
+    new THREE.PlaneGeometry(2.4, 1.2, 16, 8),
     new THREE.MeshStandardMaterial({ map: TEX.philippineFlag(), side: THREE.DoubleSide, roughness: 0.85 })
   );
-  flag.position.set(poleX + 1.24, floorH + 9.1, poleZ);
+  flag.position.set(poleX + 1.24, 9.75, poleZ);
   flag.userData.noMerge = true;
   group.add(flag);
   group.userData.flag = flag;
-  colliders.push({ half: [0.18, 5, 0.18], pos: [poleX, 5 + floorH, hallZ + poleZ], tag: "flagpole" });
+  colliders.push({ half: [0.18, 5, 0.18], pos: [poleX, 5, hallZ + poleZ], tag: "flagpole" });
+  colliders.push({ half: [0.75, 0.18, 0.75], pos: [poleX, 0.18, hallZ + poleZ], tag: "flagpole-base" });
 
-  /* entrance lamps */
+  /* ---------------------------------------------------------- entrance lamps */
   const lampMat = new THREE.MeshStandardMaterial({ color: 0x22252a, roughness: 0.6, metalness: 0.4 });
   const lamps = [];
   const bulbMat = new THREE.MeshStandardMaterial({
@@ -884,12 +1030,13 @@ function buildHall(scene, colliders) {
     emissiveIntensity: 0,
   });
   for (const side of [-1, 1]) {
-    const bracket = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 6), lampMat);
+    const x = side * (bayW / 2 + 0.32);
+    const bracket = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.7, 6), lampMat);
     bracket.rotation.z = Math.PI / 2;
-    bracket.position.set(side * (W / 2 + 0.3), floorH + wallH * 0.5, front + 0.5);
+    bracket.position.set(x, floorH + 3.1, front + 0.35);
     group.add(bracket);
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), bulbMat);
-    bulb.position.set(side * (W / 2 + 0.9), floorH + wallH * 0.5, front + 0.5);
+    bulb.position.set(x + side * 0.42, floorH + 3.1, front + 0.35);
     group.add(bulb);
     const light = new THREE.PointLight(0xffd08a, 0, 24, 1.8);
     light.position.copy(bulb.position);
@@ -897,23 +1044,50 @@ function buildHall(scene, colliders) {
     lamps.push({ bulb, light });
   }
 
-  /* lawn + a few potted plants flanking the steps */
+  /* ------------------------------------------------------- lawn + planting */
   const lawn = new THREE.Mesh(
-    new THREE.PlaneGeometry(W + 22, 28),
+    new THREE.PlaneGeometry(W + 22, 30),
     new THREE.MeshStandardMaterial({ map: TEX.grass(8), color: 0x93a367, roughness: 1 })
   );
   lawn.rotation.x = -Math.PI / 2;
-  lawn.position.set(0, 0.03, hallZ + D / 2 + 14);
+  lawn.position.set(0, 0.03, hallZ + front + 15);
   lawn.receiveShadow = true;
   scene.add(lawn);
+
+  // clipped hedges flanking the approach, and pots either side of the steps
+  const hedgeMat = new THREE.MeshStandardMaterial({ map: TEX.grass(4), color: 0x6d8a4c, roughness: 1 });
   for (const sx of [-1, 1]) {
-    const plant = pottedPlant({ scale: 1.3 });
-    plant.position.set(sx * 5.2, floorH, D / 2 + 3.4);
+    for (let i = 0; i < 3; i++) {
+      const hedge = add(new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.75, 0.9), hedgeMat));
+      hedge.position.set(sx * (5.8 + i * 0.05), 0.38, stepZ + 1.6 + i * 1.5);
+    }
+    const plant = pottedPlant({ scale: 1.35 });
+    plant.position.set(sx * 4.6, floorH, stepZ + 0.4);
     group.add(plant);
   }
 
   mergeStaticGroup(group);
   scene.add(group);
+
+  group.userData.hall = {
+    width: W,
+    depth: D,
+    floorH,
+    groundH,
+    upperH,
+    wallTop,
+    balconyY,
+    balconyDepth: porticoD,
+    balconyFront: bayEdge,
+    bayWidth: bayW,
+    alcoveDepth: alcove,
+    wallBack,
+    roofRise,
+    ridgeHalfLength: roof.userData.ridgeHalfLength,
+    signWidth: 6.6,
+    flagTop: 10.8,
+  };
+
   return { group, glass, lamps, flag };
 }
 
@@ -928,8 +1102,12 @@ function buildBackdrop(scene) {
     radialSteps: 56,
     segments: 184,
     seed: 2024,
+    // the ring is built around the same centre as the flat ground disc, so its
+    // hole sits exactly over the village. Offsetting the mesh as well doubled
+    // the shift and left hills standing on top of the relocated hall.
+    centerZ: LAYOUT.groundCenterZ,
   });
-  terrain.position.z = -LAYOUT.groundCenterZ;
+  terrain.position.z = 0;
   scene.add(terrain);
 
   // clouds

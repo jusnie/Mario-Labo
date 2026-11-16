@@ -367,6 +367,108 @@ export function gableRoof({
 
 /* ----------------------------------------------------------------- openings */
 /** Recessed window: dark glass, frame, sill, mullions, optional louvres. */
+/**
+ * Hip roof — four slopes and no gables, the shape of every provincial capitol
+ * and every barangay hall worth the name. The ridge is inset by the half-depth
+ * so all four pitches match, and the sheets carry corrugated UVs running down
+ * the slope rather than across it.
+ */
+export function hipRoof({
+  width = 10,
+  depth = 8,
+  rise = 3,
+  overhang = 0.9,
+  material = null,
+  fasciaMaterial = null,
+  ridgeCap = true,
+  uvScale = 1.6,
+} = {}) {
+  const g = new THREE.Group();
+  const mat =
+    material ??
+    sharedMaterial("hiproof", () =>
+      new THREE.MeshStandardMaterial({ map: TEX.corrugated(6, "#87938b"), roughness: 0.7, metalness: 0.2 })
+    );
+  const hw = width / 2 + overhang;
+  const hd = depth / 2 + overhang;
+  const rx = Math.max(0.6, hw - hd); // ridge half-length: equal pitch in plan
+
+  const A = new THREE.Vector3(-hw, 0, hd); // front left eave
+  const B = new THREE.Vector3(hw, 0, hd); // front right eave
+  const C = new THREE.Vector3(hw, 0, -hd); // back right eave
+  const Dc = new THREE.Vector3(-hw, 0, -hd); // back left eave
+  const E = new THREE.Vector3(-rx, rise, 0); // ridge, left
+  const F = new THREE.Vector3(rx, rise, 0); // ridge, right
+
+  const faces = [
+    { pts: [A, B, F, E], u: new THREE.Vector3(1, 0, 0) },
+    { pts: [C, Dc, E, F], u: new THREE.Vector3(-1, 0, 0) },
+    { pts: [B, C, F], u: new THREE.Vector3(0, 0, -1) },
+    { pts: [Dc, A, E], u: new THREE.Vector3(0, 0, 1) },
+  ];
+
+  const positions = [];
+  const uvs = [];
+  const emit = (p, u) => {
+    positions.push(p.x, p.y, p.z);
+    uvs.push(p.dot(u) / uvScale, (rise - p.y) / uvScale);
+  };
+  for (const face of faces) {
+    for (let i = 1; i < face.pts.length - 1; i++) {
+      emit(face.pts[0], face.u);
+      emit(face.pts[i], face.u);
+      emit(face.pts[i + 1], face.u);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geo.computeVertexNormals();
+  const roof = new THREE.Mesh(geo, mat);
+  roof.castShadow = true;
+  roof.receiveShadow = true;
+  g.add(roof);
+
+  const trimMat =
+    fasciaMaterial ??
+    sharedMaterial("hiproof-trim", () => new THREE.MeshStandardMaterial({ color: 0xcac4b4, roughness: 0.95 }));
+
+  // soffit so the roof is a roof and not a hole when you stand under the eaves
+  const soffit = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2, hd * 2), trimMat);
+  soffit.rotation.x = Math.PI / 2;
+  soffit.position.y = -0.03;
+  g.add(soffit);
+
+  // fascia boards around the eave line
+  const board = (w, d, x, z) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.18, d), trimMat);
+    m.position.set(x, 0.03, z);
+    g.add(m);
+  };
+  board(hw * 2 + 0.06, 0.07, 0, hd);
+  board(hw * 2 + 0.06, 0.07, 0, -hd);
+  board(0.07, hd * 2, hw, 0);
+  board(0.07, hd * 2, -hw, 0);
+
+  if (ridgeCap) {
+    const capMat = sharedMaterial("hiproof-cap", () =>
+      new THREE.MeshStandardMaterial({ map: TEX.corrugated(2, "#6f7a73"), roughness: 0.6, metalness: 0.3 })
+    );
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(rx * 2 + 0.3, 0.16, 0.34), capMat);
+    cap.position.y = rise + 0.02;
+    g.add(cap);
+    for (const sx of [-1, 1]) {
+      const end = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.2, 4), capMat);
+      end.rotation.y = Math.PI / 4;
+      end.position.set(sx * (rx + 0.12), rise + 0.02, 0);
+      g.add(end);
+    }
+  }
+
+  g.userData.ridgeHalfLength = rx;
+  return g;
+}
+
 export function windowUnit({
   width = 1.1,
   height = 1.2,
@@ -964,6 +1066,7 @@ export function horizonTerrain({
   rockColor = 0x6a6d68,
   sedimentColor = 0x6d6a4e,
   hazeColor = 0xa9b8c2,
+  centerZ = -110,
   volcano = { x: 150, z: -900, height: 350, radius: 285, crater: 0.13 },
 } = {}) {
   const noise = makeNoise(seed);
@@ -1039,7 +1142,7 @@ export function horizonTerrain({
     for (let j = 0; j < segments; j++) {
       const a = (j / segments) * Math.PI * 2;
       const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r - 110;
+      const z = Math.sin(a) * r + centerZ;
       const y = heightAt(x, z, r);
       pos.push(x, y, z);
 
