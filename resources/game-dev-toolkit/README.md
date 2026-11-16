@@ -65,6 +65,45 @@ the vendored bundles are what the browser actually loads. `vendor/` holds MIT
 
 Touch: left joystick to walk, drag to look, buttons for flashlight.
 
+## Modelling pass (second build)
+
+The first pass dressed the village in plain boxes and cone hills. Everything now
+comes from `barangay/models.js`, a library of real components:
+
+- **Houses** — concrete plinth (or stilts for the two raised houses), batten
+  siding, corner boards, recessed windows with sills, mullions and louvred
+  *persianas*, a ventanilla over the door, panelled doors with jambs, head
+  casing, hinges, knob and threshold, concrete steps, an awning on brackets, a
+  porch with deck, posts, canopy, fascia and turned balusters, plus a tapayan
+  (lathe-turned clay jar), potted plants, a clothesline of laundry and a bamboo
+  fence.
+- **Roofs** — corrugated *sheets*: the ribs are real geometry with a shallow sag
+  between purlins, closed by a fascia board and a soffit, capped at the ridge.
+- **Hall** — four-post portico carrying a first-floor balcony with balustrade,
+  cornice, skirt and storey band, double panelled doors, ten front windows, side
+  windows, entrance lamps, signboards, a finialled flagpole and a mown lawn.
+- **Landscape** — the 7-sided cones are gone. The horizon is a displaced terrain
+  ring (7,896 vertices) that is flat where you walk, rolls into hills, then
+  ridges into mountains at the fog line. Rice is a clump of curved blades, and
+  the cornfield is a single merged stalk-plus-leaves geometry, both instanced.
+- **Performance** — houses were 188 loose parts each; a static-batch pass with
+  shared materials folds them to ~25-31 draw calls, so all that detail costs
+  about 410 draw calls for the whole village at ~70k triangles.
+
+## Sound pass
+
+`barangay/sound.js` synthesises everything with the Web Audio API — there are no
+recordings in this build.
+
+- **Footsteps** are layered from a heel thump, a two-grain surface crunch and a
+  scuff, panned left/right by alternating foot, with a longer stride when
+  running. Five surfaces are mapped by position in `barangay/surfaces.js`:
+  gravel on the road, grass off it, **wood on the store's floorboards**, and
+  concrete on the hall forecourt.
+- **Landing** thuds when you drop more than a few metres.
+- **Dawn** — a synthesised rooster at 05:00, then sparse birdsong while the sun
+  is up; crickets swell after dusk and the dog howls at midnight.
+
 ## What is actually implemented
 
 - Terrain, dirt road with shoulders, rice paddies with planted rows and bunds, a
@@ -120,7 +159,9 @@ resources/game-dev-toolkit/
     main.js                           Rapier player, input, interactions, loop
     world.js                          terrain, road, grove, hall, fields, sky, clock
     places.js                         store, bench, tindera, Ernie's house, posts
+    models.js                         component library: roofs, windows, doors, props, terrain
     characters.js                     CC0 body/garment factory, morphs, clips
+    surfaces.js                       which footstep surface is underfoot
     textures.js                       procedural canvas surfaces
     physics.js                        Rapier world + shared character step
     shop.js / tindera-lines.js        inventory, wallet, dialogue

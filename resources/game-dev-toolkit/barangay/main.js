@@ -11,6 +11,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 
 import { buildWorld, LAYOUT } from "./world.js";
 import { buildPhysics, stepPlayer } from "./physics.js";
+import { surfaceAt } from "./surfaces.js";
 import { createStore, createErniesHouse, buildStreetFurniture } from "./places.js";
 import { CharacterLibrary } from "./characters.js";
 import { AudioEngine } from "./sound.js";
@@ -31,6 +32,7 @@ const app = {
   grounded: true,
   money: new Wallet(),
   stepDistance: 0,
+  footToggle: 0,
   focusAnim: null,
   nearest: null,
 };
@@ -262,9 +264,8 @@ async function boot() {
   });
 
   world3d.clock.onHour((hour) => {
-    if (hour === 0) {
-      audio.dogHowl(1);
-    }
+    if (hour === 0) audio.dogHowl(1);
+    if (hour === 5) audio.rooster();
   });
 
   function setHour(h) {
@@ -470,18 +471,27 @@ async function boot() {
     // --- gravity + capsule movement (shared with walkthrough-test.mjs)
     app.velocityY = Math.max(app.velocityY - 22 * dt, -55);
     const step = stepPlayer(physics, wish.x, wish.z, app.velocityY, dt);
+    const airborne = !app.grounded;
+    const impact = app.velocityY;
     app.grounded = step.grounded;
-    if (app.grounded && app.velocityY < 0) app.velocityY = -2;
+    if (app.grounded && app.velocityY < 0) {
+      if (airborne && impact < -5) audio.landing(Math.min(1.6, Math.abs(impact) / 11));
+      app.velocityY = -2;
+    }
 
     const pos = step.position;
 
-    // --- footsteps
-    if (canMove && app.grounded) {
+    // --- footsteps: stride length depends on gait, feet alternate, and the
+    //     surface underfoot changes the sound
+    if (canMove && app.grounded && step.moved > 0.0005) {
+      const stride = running ? 1.32 : 0.74;
       app.stepDistance += step.moved;
-      if (app.stepDistance > (running ? 1.15 : 0.85)) {
+      if (app.stepDistance >= stride) {
         app.stepDistance = 0;
-        audio.footstep("dirt");
+        audio.footstep(surfaceAt(pos.x, pos.z), { running, foot: app.footToggle ^= 1 });
       }
+    } else if (!canMove || !app.grounded) {
+      app.stepDistance = Math.min(app.stepDistance, 0.4);
     }
 
     // --- camera
@@ -504,6 +514,7 @@ async function boot() {
     world3d.update(dt, camera.position);
     store.update(dt);
     audio.setNight(1 - world3d.clock.daylight);
+    audio.setBirds(world3d.clock.daylight > 0.55);
     house.bulbMat.emissiveIntensity = (1 - world3d.clock.daylight) * 1.5;
     house.porchLight.intensity = (1 - world3d.clock.daylight) * 7;
 

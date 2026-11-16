@@ -8,6 +8,7 @@
  */
 import * as THREE from "three";
 import { buildHouse, gableRoof } from "./world.js";
+import { jar, pottedPlant, mergeStaticGroup } from "./models.js";
 import * as TEX from "./textures.js";
 
 /* ------------------------------------------------------------------- store */
@@ -49,7 +50,16 @@ export async function createStore(scene, colliders, characters) {
 
   /* roof: ridge parallel to the storefront, so the eaves shade the counter */
   const rise = 1.9;
-  const roofGroup = gableRoof(D, W, rise, nipaMat, 0.7, "x", plasterMat);
+  const roofGroup = gableRoof({
+    width: D,
+    depth: W,
+    rise,
+    material: nipaMat,
+    overhang: 0.7,
+    ridgeAlong: "x",
+    gableMaterial: plasterMat,
+    ribbed: false,
+  });
   roofGroup.position.y = wallH;
   group.add(roofGroup);
 
@@ -189,6 +199,14 @@ export async function createStore(scene, colliders, characters) {
 
   scene.add(group);
 
+  /* props: a tapayan by the post and a plant on the counter end */
+  const shopJar = jar({ height: 0.58, radius: 0.27, color: 0x9d5f38 });
+  shopJar.position.set(W / 2 - 0.5, 0.3, D / 2 + 1.35);
+  group.add(shopJar);
+  const shopPlant = pottedPlant({ scale: 0.85 });
+  shopPlant.position.set(-W / 2 + 0.45, 0.3, D / 2 + 1.3);
+  group.add(shopPlant);
+
   /* the tindera herself */
   let tindera = null;
   if (characters) {
@@ -205,6 +223,9 @@ export async function createStore(scene, colliders, characters) {
   }
 
   /* where the camera settles when you talk to her */
+  mergeStaticGroup(group);
+  scene.add(group);
+
   const focusLocal = new THREE.Vector3(0, 1.42, D / 2 + 1.55);
   const focusWorld = focusLocal.clone().applyMatrix4(new THREE.Matrix4().compose(group.position, new THREE.Quaternion().setFromEuler(group.rotation), new THREE.Vector3(1, 1, 1)));
   const lookTarget = new THREE.Vector3(0.15, 1.35, D / 2 - 1.1).applyMatrix4(

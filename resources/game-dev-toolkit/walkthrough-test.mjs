@@ -38,6 +38,8 @@ const RAPIER = await import("@dimforge/rapier3d-compat");
 const { buildWorld, gableRoof, buildHouse } = await import("./barangay/world.js");
 const { createStore, createErniesHouse, buildStreetFurniture } = await import("./barangay/places.js");
 const { buildPhysics, stepPlayer } = await import("./barangay/physics.js");
+const { surfaceAt, SURFACE_KINDS } = await import("./barangay/surfaces.js");
+const { SURFACES } = await import("./barangay/sound.js");
 
 let failures = 0;
 const ok = (m) => console.log(`  \u2713 ${m}`);
@@ -190,6 +192,85 @@ distToDoor < 3.0
   ? ok(`Ernie's house door reachable — ${distToDoor.toFixed(2)}m`)
   : bad(`house door unreachable (${distToDoor.toFixed(2)}m)`);
 
+/* ------------------------------------------------------- modelling quality */
+section("modelled detail, not placeholder shapes");
+{
+  const cones = [];
+  const groundTris = [];
+  scene.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.geometry?.type === "ConeGeometry") cones.push(o);
+  });
+  cones.length === 0
+    ? ok("no cone stacks left in the backdrop (hills are displaced terrain now)")
+    : bad(`${cones.length} ConeGeometry meshes still in the scene`);
+
+  const terrain = world3d.terrain;
+  const vcount = terrain.geometry.attributes.position.count;
+  const box = new THREE.Box3().setFromObject(terrain);
+  vcount > 5000
+    ? ok(`horizon terrain is a real mesh: ${vcount} vertices, ridges to y=${box.max.y.toFixed(0)}m`)
+    : bad(`terrain only has ${vcount} vertices`);
+  box.max.y > 40 ? ok("terrain rises into hills/mountains away from the village") : bad("terrain is flat");
+
+  // the village floor must stay flat where people walk
+  const flatGround = scene.children.find((o) => o.isMesh && o.geometry?.type === "CircleGeometry");
+  flatGround ? ok("village floor is a flat disc meeting the terrain ring") : bad("no flat village floor");
+
+  for (const [i, h] of world3d.houses.slice(0, 3).entries()) {
+    const b = h.group.userData.batched;
+    b && b.to < 40
+      ? ok(`house ${i + 1} batched ${b.from} parts into ${b.to} draw calls`)
+      : bad(`house ${i + 1} not batched (${b ? b.to : "none"} draw calls)`);
+  }
+  const hallBatch = world3d.hall.group.userData.batched;
+  hallBatch && hallBatch.to < 40
+    ? ok(`hall batched ${hallBatch.from} parts into ${hallBatch.to} draw calls`)
+    : bad(`hall not batched (${hallBatch ? hallBatch.to : "none"})`);
+
+  // roofs must be ribbed sheets, not plain boxes
+  let ribbedSheets = 0;
+  world3d.houses[0].group.traverse((o) => {
+    if (o.isMesh && o.geometry?.attributes?.position && o.geometry.attributes.position.count > 200) ribbedSheets++;
+  });
+  ribbedSheets > 0 ? ok("roof sheets carry ribbed geometry") : bad("no ribbed roof geometry found");
+}
+
+/* ------------------------------------------------------------- footstep map */
+section("footstep surfaces");
+{
+  const road = surfaceAt(0, -120);
+  const verge = surfaceAt(30, -120);
+  const shopFloor = surfaceAt(10, -6);
+  const hallForecourt = surfaceAt(0, -272);
+  road === "gravel" ? ok(`road -> "${road}"`) : bad(`road mapped to "${road}"`);
+  verge === "grass" ? ok(`off-road -> "${verge}"`) : bad(`off-road mapped to "${verge}"`);
+  shopFloor === "wood" ? ok(`store floor -> "${shopFloor}"`) : bad(`store floor mapped to "${shopFloor}"`);
+  hallForecourt === "concrete" ? ok(`hall forecourt -> "${hallForecourt}"`) : bad(`hall forecourt mapped to "${hallForecourt}"`);
+
+  const missing = SURFACE_KINDS.filter((k) => !SURFACES[k]);
+  missing.length === 0
+    ? ok(`all ${SURFACE_KINDS.length} surfaces have a synthesised footstep (${Object.keys(SURFACES).join(", ")})`)
+    : bad(`no sound defined for: ${missing.join(", ")}`);
+
+  const engine = new (await import("./barangay/sound.js")).AudioEngine();
+  const api = ["footstep", "landing", "rooster", "setBirds", "dogHowl", "setNight"];
+  const absent = api.filter((m) => typeof engine[m] !== "function");
+  absent.length === 0
+    ? ok("audio engine exposes footstep/landing/rooster/birds/howl")
+    : bad(`audio engine missing: ${absent.join(", ")}`);
+  // nothing may throw before a user gesture has unlocked audio
+  try {
+    engine.footstep("gravel", { running: true, foot: 1 });
+    engine.landing(1.2);
+    engine.rooster();
+    engine.setBirds(true);
+    ok("audio calls are safe before start() (no context, no crash)");
+  } catch (err) {
+    bad(`audio threw before start(): ${err.message}`);
+  }
+}
+
 /* ------------------------------------------------------------------ roofs */
 section("roofs slope the right way");
 {
@@ -201,30 +282,32 @@ section("roofs slope the right way");
   const D = 6.6;
   const RISE = 2.4;
   const OVER = 0.55;
-  const roof = gableRoof(W, D, RISE, mat, OVER);
+  const roof = gableRoof({ width: W, depth: D, rise: RISE, material: mat, overhang: OVER });
   roof.updateMatrixWorld(true);
 
-  const planes = roof.children.filter(
-    (c) => c.isMesh && c.geometry?.type === "BoxGeometry" && c.geometry.parameters.width > 2
-  );
-  planes.length === 2 ? ok("two slope planes built") : bad(`expected 2 slope planes, found ${planes.length}`);
+  const planes = roof.children.filter((c) => c.isMesh && c.userData.role === "slope");
+  planes.length === 2 ? ok("two slope sheets built") : bad(`expected 2 slope sheets, found ${planes.length}`);
 
   for (const [i, plane] of planes.entries()) {
-    const half = plane.geometry.parameters.width / 2;
-    const a = new THREE.Vector3(-half, 0, 0).applyMatrix4(plane.matrixWorld);
-    const b = new THREE.Vector3(half, 0, 0).applyMatrix4(plane.matrixWorld);
-    const ridgeEnd = Math.abs(a.x) < Math.abs(b.x) ? a : b;
-    const eaveEnd = ridgeEnd === a ? b : a;
-    const drop = ridgeEnd.y - eaveEnd.y;
-    Math.abs(ridgeEnd.y - RISE) < 0.08
-      ? ok(`plane ${i + 1} high end sits at the ridge (y=${ridgeEnd.y.toFixed(2)} vs rise ${RISE})`)
-      : bad(`plane ${i + 1} ridge end at y=${ridgeEnd.y.toFixed(2)}, expected ${RISE}`);
-    Math.abs(eaveEnd.y) < 0.08
-      ? ok(`plane ${i + 1} eave end reaches the wall top (y=${eaveEnd.y.toFixed(2)})`)
-      : bad(`plane ${i + 1} eave end at y=${eaveEnd.y.toFixed(2)}, expected 0`);
-    drop > 1.5
-      ? ok(`plane ${i + 1} drops ${drop.toFixed(2)}m outward (Λ, not V)`)
-      : bad(`plane ${i + 1} only drops ${drop.toFixed(2)}m outward — roof is inverted`);
+    // sample real vertices rather than trusting a bounding box
+    const pos = plane.geometry.attributes.position;
+    let ridge = null;
+    let eave = null;
+    const v = new THREE.Vector3();
+    for (let k = 0; k < pos.count; k++) {
+      v.fromBufferAttribute(pos, k).applyMatrix4(plane.matrixWorld);
+      if (!ridge || Math.abs(v.x) < Math.abs(ridge.x)) ridge = v.clone();
+      if (!eave || Math.abs(v.x) > Math.abs(eave.x)) eave = v.clone();
+    }
+    Math.abs(ridge.y - RISE) < 0.12
+      ? ok(`sheet ${i + 1} meets the ridge at y=${ridge.y.toFixed(2)} (rise ${RISE})`)
+      : bad(`sheet ${i + 1} ridge end at y=${ridge.y.toFixed(2)}, expected ${RISE}`);
+    Math.abs(eave.y) < 0.12
+      ? ok(`sheet ${i + 1} reaches the wall top at y=${eave.y.toFixed(2)}`)
+      : bad(`sheet ${i + 1} eave end at y=${eave.y.toFixed(2)}, expected 0`);
+    ridge.y - eave.y > 1.5
+      ? ok(`sheet ${i + 1} drops ${(ridge.y - eave.y).toFixed(2)}m outward (Λ, not V)`)
+      : bad(`sheet ${i + 1} only drops ${(ridge.y - eave.y).toFixed(2)}m outward — roof is inverted`);
   }
 
   const box = new THREE.Box3().setFromObject(roof);
@@ -245,7 +328,7 @@ section("roofs slope the right way");
     : bad(`gable apex at ${top.toFixed(2)}m vs ridge ${RISE}m`);
 
   // ridgeAlong "x" is used by the hall and the store
-  const hallRoof = gableRoof(16, 24, 3.4, mat, 0.8, "x");
+  const hallRoof = gableRoof({ width: 16, depth: 24, rise: 3.4, material: mat, overhang: 0.8, ridgeAlong: "x" });
   hallRoof.updateMatrixWorld(true);
   const hb = new THREE.Box3().setFromObject(hallRoof);
   hb.max.x - hb.min.x > hb.max.z - hb.min.z

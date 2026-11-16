@@ -11,6 +11,19 @@
  * start() is called from a click or key press.
  */
 
+/**
+ * Per-surface footstep character. Everything is synthesised from a noise bed
+ * plus a low thump, so the road, grass, the store's wooden floor and the hall
+ * concrete all sound different underfoot.
+ */
+export const SURFACES = {
+  gravel: { thump: 96, thumpGain: 0.055, noiseFreq: 1850, noiseQ: 0.8, highpass: 420, crunch: 0.2, decay: 0.15 },
+  dirt: { thump: 82, thumpGain: 0.05, noiseFreq: 950, noiseQ: 1.1, highpass: 260, crunch: 0.15, decay: 0.17 },
+  grass: { thump: 58, thumpGain: 0.03, noiseFreq: 3100, noiseQ: 0.7, highpass: 1500, crunch: 0.1, decay: 0.2 },
+  wood: { thump: 132, thumpGain: 0.06, noiseFreq: 620, noiseQ: 2.6, highpass: 180, crunch: 0.11, decay: 0.13 },
+  concrete: { thump: 150, thumpGain: 0.05, noiseFreq: 2400, noiseQ: 1.4, highpass: 700, crunch: 0.12, decay: 0.1 },
+};
+
 export class AudioEngine {
   constructor() {
     this.ctx = null;
@@ -123,27 +136,196 @@ export class AudioEngine {
     this.caption(on ? "Tunog: bukas" : "Tunog: patay (muted)");
   }
 
-  footstep(surface = "dirt") {
+  /**
+   * A footstep, layered from three parts so it has weight and texture instead
+   * of a single click: a low heel thump, a debris crunch, and a short scuff.
+   * Each surface has its own character, and left/right feet alternate in the
+   * stereo field.
+   */
+  footstep(surface = "dirt", { running = false, foot = 0 } = {}) {
     if (!this.ctx || !this.enabled) return;
     const now = this.ctx.currentTime;
-    if (now - this.lastStepAt < 0.22) return;
+    const cfg = SURFACES[surface] ?? SURFACES.dirt;
+    const jitter = () => 0.92 + Math.random() * 0.16;
+    const pan = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+    if (pan) {
+      pan.pan.value = foot ? 0.28 : -0.28;
+      pan.connect(this.master);
+    }
+    const bus = pan ?? this.master;
+    const loud = running ? 1.15 : 1;
+
+    // 1. heel/sole thump
+    const thump = this.ctx.createOscillator();
+    thump.type = "sine";
+    thump.frequency.setValueAtTime(cfg.thump * jitter() * (running ? 1.1 : 1), now);
+    thump.frequency.exponentialRampToValueAtTime(cfg.thump * 0.55, now + 0.09);
+    const thumpGain = this.ctx.createGain();
+    thumpGain.gain.setValueAtTime(0.0001, now);
+    thumpGain.gain.exponentialRampToValueAtTime(cfg.thumpGain * loud, now + 0.008);
+    thumpGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+    thump.connect(thumpGain).connect(bus);
+    thump.start(now);
+    thump.stop(now + 0.14);
+
+    // 2. debris / surface crunch — two quick grains, heel then toe
+    for (const [offset, gain] of [
+      [0, 1],
+      [0.055 + Math.random() * 0.02, 0.55],
+    ]) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noiseBuffer;
+      src.playbackRate.value = 0.85 + Math.random() * 0.4;
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = cfg.noiseFreq * jitter();
+      bp.Q.value = cfg.noiseQ;
+      const hp = this.ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = cfg.highpass;
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.0001, now + offset);
+      g.gain.exponentialRampToValueAtTime(cfg.crunch * gain * loud, now + offset + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + offset + cfg.decay);
+      src.connect(bp).connect(hp).connect(g).connect(bus);
+      src.start(now + offset, Math.random() * 1.6, cfg.decay + 0.05);
+    }
+
+    // 3. scuff: a faint tail so the step has air around it
+    const scuff = this.ctx.createBufferSource();
+    scuff.buffer = this.noiseBuffer;
+    scuff.playbackRate.value = 1.3;
+    const scuffFilter = this.ctx.createBiquadFilter();
+    scuffFilter.type = "highpass";
+    scuffFilter.frequency.value = cfg.highpass * 1.6;
+    const scuffGain = this.ctx.createGain();
+    scuffGain.gain.setValueAtTime(0.0001, now + 0.02);
+    scuffGain.gain.exponentialRampToValueAtTime(0.018 * loud, now + 0.05);
+    scuffGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    scuff.connect(scuffFilter).connect(scuffGain).connect(bus);
+    scuff.start(now + 0.02, Math.random(), 0.24);
+
     this.lastStepAt = now;
-    const src = this.ctx.createBufferSource();
-    src.buffer = this.noiseBuffer;
-    src.playbackRate.value = 0.8 + Math.random() * 0.5;
-    const lp = this.ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.value = surface === "dirt" ? 850 : 1500;
-    const bp = this.ctx.createBiquadFilter();
-    bp.type = "bandpass";
-    bp.frequency.value = surface === "dirt" ? 240 : 700;
-    bp.Q.value = 1.2;
-    const g = this.ctx.createGain();
+  }
+
+  /** Landing from a jump or a drop: the same idea with more mass. */
+  landing(force = 1) {
+    if (!this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const thump = ctx.createOscillator();
+    thump.type = "sine";
+    thump.frequency.setValueAtTime(78, now);
+    thump.frequency.exponentialRampToValueAtTime(38, now + 0.18);
+    const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(0.16, now + 0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
-    src.connect(lp).connect(bp).connect(g).connect(this.master);
-    src.start(now, Math.random() * 1.5, 0.22);
+    g.gain.exponentialRampToValueAtTime(0.22 * Math.min(1.6, force), now + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
+    thump.connect(g).connect(this.master);
+    thump.start(now);
+    thump.stop(now + 0.28);
+
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 900;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, now);
+    ng.gain.exponentialRampToValueAtTime(0.13 * Math.min(1.6, force), now + 0.01);
+    ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+    src.connect(lp).connect(ng).connect(this.master);
+    src.start(now, Math.random(), 0.22);
+  }
+
+  /**
+   * A rooster at dawn — synthesised from a sawtooth with a formant filter bank,
+   * a rising-then-falling pitch envelope and three syllables.
+   */
+  rooster() {
+    if (!this.ctx || !this.enabled) return false;
+    const ctx = this.ctx;
+    const start = ctx.currentTime + 0.05;
+    const syllables = [
+      { t: 0, dur: 0.34, f0: 520, f1: 760 },
+      { t: 0.4, dur: 0.28, f0: 700, f1: 940 },
+      { t: 0.72, dur: 0.62, f0: 880, f1: 620 },
+    ];
+    for (const s of syllables) {
+      const t = start + s.t;
+      const osc = ctx.createOscillator();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(s.f0, t);
+      osc.frequency.linearRampToValueAtTime(s.f1, t + s.dur * 0.4);
+      osc.frequency.linearRampToValueAtTime(s.f0 * 0.82, t + s.dur);
+      const vib = ctx.createOscillator();
+      vib.frequency.value = 28;
+      const vibGain = ctx.createGain();
+      vibGain.gain.value = 22;
+      vib.connect(vibGain).connect(osc.frequency);
+      // two formants give it a throaty, animal timbre
+      const f1 = ctx.createBiquadFilter();
+      f1.type = "bandpass";
+      f1.frequency.value = 1200;
+      f1.Q.value = 4.5;
+      const f2 = ctx.createBiquadFilter();
+      f2.type = "bandpass";
+      f2.frequency.value = 2500;
+      f2.Q.value = 6;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.11, t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.05, t + s.dur * 0.7);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + s.dur);
+      osc.connect(f1).connect(g);
+      osc.connect(f2).connect(g);
+      g.connect(this.master);
+      osc.start(t);
+      vib.start(t);
+      osc.stop(t + s.dur + 0.02);
+      vib.stop(t + s.dur + 0.02);
+    }
+    this.caption("(Tilaok ng manok sa malayo)");
+    return true;
+  }
+
+  /** Sparse daytime birdsong, scheduled while the sun is up. */
+  setBirds(on) {
+    if (!this.ctx) return;
+    if (on && !this.birdTimer) {
+      const chirp = () => {
+        if (!this.ctx || !this.enabled) return;
+        const ctx = this.ctx;
+        const now = ctx.currentTime;
+        const notes = 2 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < notes; i++) {
+          const t = now + i * (0.07 + Math.random() * 0.05);
+          const osc = ctx.createOscillator();
+          osc.type = "sine";
+          const base = 2200 + Math.random() * 1600;
+          osc.frequency.setValueAtTime(base, t);
+          osc.frequency.exponentialRampToValueAtTime(base * (1.15 + Math.random() * 0.4), t + 0.05);
+          const g = ctx.createGain();
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.exponentialRampToValueAtTime(0.02, t + 0.01);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+          const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+          if (pan) {
+            pan.pan.value = Math.random() * 1.4 - 0.7;
+            osc.connect(g).connect(pan).connect(this.master);
+          } else {
+            osc.connect(g).connect(this.master);
+          }
+          osc.start(t);
+          osc.stop(t + 0.09);
+        }
+      };
+      this.birdTimer = setInterval(chirp, 4200 + Math.random() * 5000);
+      chirp();
+    } else if (!on && this.birdTimer) {
+      clearInterval(this.birdTimer);
+      this.birdTimer = null;
+    }
   }
 
   /** Synthesised, not a recording — see the file header. */
