@@ -829,7 +829,10 @@ function buildHall(scene, colliders) {
   /* --------------------------------------- entrance bay, columns, balcony */
   const columnH = balconyY - floorH;
   const columnX = bayW / 2 - 0.55;
-  const columnZ = bayEdge - 0.6;
+  // the plinth ends at D/2 + 1.6; keep the whole base on it rather than
+  // straddling the top tread, which left the column half over the steps
+  const columnZ = D / 2 + 1.25;
+  const columns = [];
   for (const sx of [-1, 1]) {
     add(new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.34, 0.78), postMat)).position.set(sx * columnX, floorH + 0.17, columnZ);
     const shaft = add(new THREE.Mesh(new THREE.BoxGeometry(0.54, columnH - 0.56, 0.54), postMat));
@@ -844,6 +847,7 @@ function buildHall(scene, colliders) {
       pos: [sx * columnX, floorH + columnH / 2, hallZ + columnZ],
       tag: "column",
     });
+    columns.push({ x: sx * columnX, z: columnZ, baseY: floorH });
   }
 
   // balcony slab — the canopy over the entrance and the floor of the balcony
@@ -893,15 +897,21 @@ function buildHall(scene, colliders) {
       pos: [sx * wingX, balconyY - 0.12, hallZ + 0.4],
       tag: "veranda",
     });
-    // columns down to the plinth
+    // columns down to the GROUND: these stand outside the plinth, so stopping
+    // them at plinth height left them hanging in the air over the lawn
+    const wingColX = sx * (W / 2 + 2.35);
     for (const sz of [-1, 1]) {
-      const col = add(new THREE.Mesh(new THREE.BoxGeometry(0.44, balconyY - floorH - 0.24, 0.44), postMat));
-      col.position.set(sx * (W / 2 + 2.35), floorH + (balconyY - floorH - 0.24) / 2, 0.4 + sz * 2.3);
+      const z = 0.4 + sz * 2.3;
+      const height = balconyY - 0.24;
+      const col = add(new THREE.Mesh(new THREE.BoxGeometry(0.44, height, 0.44), postMat));
+      col.position.set(wingColX, height / 2, z);
+      add(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.3, 0.62), postMat)).position.set(wingColX, 0.15, z);
       colliders.push({
-        half: [0.24, (balconyY - floorH) / 2, 0.24],
-        pos: [sx * (W / 2 + 2.35), floorH + (balconyY - floorH) / 2, hallZ + 0.4 + sz * 2.3],
+        half: [0.24, height / 2, 0.24],
+        pos: [wingColX, height / 2, hallZ + z],
         tag: "column",
       });
+      columns.push({ x: wingColX, z, baseY: 0 });
     }
     // balustrade on the outer edge and the two ends
     const outer = railing({ length: 5.5, height: 0.9, spacing: 0.2, material: postMat });
@@ -1092,6 +1102,7 @@ function buildHall(scene, colliders) {
     signWidth: 6.6,
     flagTop: 10.8,
     props,
+    columns,
   };
 
   return { group, glass, lamps, flag };

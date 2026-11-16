@@ -322,6 +322,20 @@ if (which === "hallsteps" || which === "all") {
   void hall;
 }
 
+if (which === "hallwing" || which === "all") {
+  // ground-level look at the side veranda: this is where the columns used to
+  // stop at plinth height and hang over the lawn
+  const scene = new THREE.Scene();
+  ground(scene);
+  const hall = buildHall(scene, []);
+  render(
+    scene,
+    cameraAt({ x: 21, y: 1.6, z: LAYOUT.hallZ + 13 }, { x: 12.5, y: 3.0, z: LAYOUT.hallZ + 1 }, 55),
+    "preview-hallwing.png"
+  );
+  void hall;
+}
+
 if (which === "store" || which === "all") {
   const scene = new THREE.Scene();
   const world = buildWorld(scene, { startHour: 15 });

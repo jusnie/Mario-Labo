@@ -587,6 +587,18 @@ section("roofs slope the right way");
     ? ok(`all ${hall.props.length} hall props stand on the ground or the plinth — nothing floats`)
     : bad(`${floating.length} hall props float: ${floating.map((p) => `${p.kind}@${p.x.toFixed(1)},${p.z.toFixed(1)} y=${p.y}`).join(", ")}`);
 
+  // every column has to land on something: the plinth for the portico, the
+  // ground for the side verandas that stand outside it
+  const plinthHalfX = (hall.width + 3.2) / 2;
+  const plinthHalfZ = (hall.depth + 3.2) / 2;
+  const unsupported = (hall.columns ?? []).filter((c) => {
+    const onPlinth = Math.abs(c.x) <= plinthHalfX && Math.abs(c.z) <= plinthHalfZ;
+    return onPlinth ? Math.abs(c.baseY - hall.floorH) > 0.05 : c.baseY > 0.05;
+  });
+  unsupported.length === 0
+    ? ok(`all ${hall.columns.length} columns land on the plinth or the ground`)
+    : bad(`${unsupported.length} columns float: ${unsupported.map((c) => `${c.x.toFixed(1)},${c.z.toFixed(1)} base ${c.baseY}`).join(", ")}`);
+
   const apex = hall.wallTop + hall.roofRise;
   apex > hall.wallTop + 2 && apex < 14
     ? ok(`ridge peaks at ${apex.toFixed(1)}m, ${hall.roofRise}m above the eaves`)
