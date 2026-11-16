@@ -8,6 +8,10 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { LAYOUT } from "./world.js";
 
 export const PLAYER = { halfHeight: 0.42, radius: 0.28 };
+/** Capsule centre above the floor it stands on (half height + radius). */
+const FEET_TO_CENTRE = PLAYER.halfHeight + PLAYER.radius;
+/** Tallest riser the player can mount — one porch tread, with margin. */
+const STEP_HEIGHT = 0.40;
 export const START_POSITION = { x: 0, y: 1.0, z: LAYOUT.startZ };
 
 export function buildPhysics(colliderDescriptors) {
@@ -19,9 +23,11 @@ export function buildPhysics(colliderDescriptors) {
 
   // static props from the world builders
   for (const d of colliderDescriptors) {
-    const body = world.createRigidBody(
-      RAPIER.RigidBodyDesc.fixed().setTranslation(d.pos[0], d.pos[1], d.pos[2])
-    );
+    const desc = RAPIER.RigidBodyDesc.fixed().setTranslation(d.pos[0], d.pos[1], d.pos[2]);
+    // rotated boxes are needed for the hidden ramps under the door steps: the
+    // character controller walks up a slope but will not auto-step a riser
+    if (d.quat) desc.setRotation({ x: d.quat[0], y: d.quat[1], z: d.quat[2], w: d.quat[3] });
+    const body = world.createRigidBody(desc);
     world.createCollider(RAPIER.ColliderDesc.cuboid(d.half[0], d.half[1], d.half[2]), body);
   }
 
@@ -63,16 +69,50 @@ export function buildPhysics(colliderDescriptors) {
  * Advance the character one frame. Shared with the game loop so the test and
  * the browser cannot drift apart.
  */
+/**
+ * Height of the first thing in front of the player that could be a step, or
+ * null when there is nothing within reach. Measured by dropping a ray onto the
+ * ledge just ahead of the capsule.
+ */
+function ledgeAhead(physics, p, dirX, dirZ) {
+  const reach = PLAYER.radius + 0.12;
+  const originY = p.y + STEP_HEIGHT;
+  const ray = new RAPIER.Ray(
+    { x: p.x + dirX * reach, y: originY, z: p.z + dirZ * reach },
+    { x: 0, y: -1, z: 0 }
+  );
+  const hit = physics.world.castRay(ray, STEP_HEIGHT + 0.6, true, undefined, undefined, physics.collider);
+  return hit ? originY - hit.timeOfImpact : null;
+}
+
 export function stepPlayer(physics, wishX, wishZ, velocityY, dt) {
-  physics.controller.computeColliderMovement(physics.collider, {
-    x: wishX * dt,
-    y: velocityY * dt,
-    z: wishZ * dt,
-  });
-  const mv = physics.controller.computedMovement();
+  const ctrl = physics.controller;
+  const wish = { x: wishX * dt, y: velocityY * dt, z: wishZ * dt };
+  ctrl.computeColliderMovement(physics.collider, wish);
+  let mv = ctrl.computedMovement();
+
+  // Rapier's own autostep refuses vertical risers in this build (it will not
+  // mount even a 0.2 m curb), so the porch and the hall steps are climbed by
+  // hand: when the walk is blocked but there is a low ledge right in front, the
+  // capsule is lifted onto it and the frame is finished from up there.
+  const wanted = Math.hypot(wishX, wishZ) * dt;
+  const blocked = wanted > 1e-5 && Math.hypot(mv.x, mv.z) < wanted * 0.55;
+  if (blocked) {
+    const p = physics.body.translation();
+    const len = Math.hypot(wishX, wishZ) || 1;
+    const ledge = ledgeAhead(physics, p, wishX / len, wishZ / len);
+    const floorY = p.y - FEET_TO_CENTRE;
+    const rise = ledge === null ? 0 : ledge - floorY;
+    if (rise > 0.02 && rise <= STEP_HEIGHT) {
+      physics.body.setTranslation({ x: p.x, y: ledge + FEET_TO_CENTRE + 0.02, z: p.z }, true);
+      ctrl.computeColliderMovement(physics.collider, { x: wish.x, y: -0.5 * dt, z: wish.z });
+      mv = ctrl.computedMovement();
+    }
+  }
+
   const p = physics.body.translation();
   physics.body.setNextKinematicTranslation({ x: p.x + mv.x, y: p.y + mv.y, z: p.z + mv.z });
-  const grounded = physics.controller.computedGrounded();
+  const grounded = ctrl.computedGrounded();
   physics.world.step();
   return { grounded, moved: Math.hypot(mv.x, mv.z), position: physics.body.translation() };
 }

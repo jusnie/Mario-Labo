@@ -11,6 +11,7 @@
  *   node tools/preview.mjs house      -> preview-house.png
  *   node tools/preview.mjs street     -> preview-street.png
  *   node tools/preview.mjs mountains  -> preview-mountains.png
+ *   node tools/preview.mjs porch      -> preview-porch.png
  *   node tools/preview.mjs all
  *
  * PNG encoding is delegated to ImageMagick (`convert`), which is present here;
@@ -233,6 +234,41 @@ if (which === "house" || which === "all") {
   house.group.position.set(0, 0, 0);
   scene.add(house.group);
   render(scene, cameraAt({ x: -9.5, y: 4.2, z: 9.5 }, { x: 0, y: 1.7, z: 0.6 }), "preview-house.png");
+}
+
+if (which === "porch" || which === "all") {
+  const scene = new THREE.Scene();
+  ground(scene);
+  const house = buildHouse({ seed: 3, width: 8.2, depth: 6.6, porch: true, fence: true, laundry: true });
+  house.group.position.set(0, 0, 0);
+  scene.add(house.group);
+  const porch = house.group.userData.porch;
+  // stand in the yard, off the door axis, looking along the porch
+  render(
+    scene,
+    cameraAt(
+      { x: porch.doorX - 3.6, y: 1.55, z: porch.stepZ + 2.3 },
+      { x: porch.doorX + 1.6, y: 0.75, z: porch.front - 0.1 }
+    ),
+    "preview-porch.png"
+  );
+}
+
+if (which === "porchfront" || which === "all") {
+  const scene = new THREE.Scene();
+  ground(scene);
+  const house = buildHouse({ seed: 3, width: 8.2, depth: 6.6, porch: true, fence: false, laundry: false });
+  house.group.position.set(0, 0, 0);
+  scene.add(house.group);
+  const porch = house.group.userData.porch;
+  render(
+    scene,
+    cameraAt(
+      { x: porch.doorX - 0.4, y: 1.35, z: porch.stepZ + 3.4 },
+      { x: porch.benchX - 0.9, y: 0.7, z: porch.front - 0.5 }
+    ),
+    "preview-porchfront.png"
+  );
 }
 
 if (which === "street" || which === "all") {

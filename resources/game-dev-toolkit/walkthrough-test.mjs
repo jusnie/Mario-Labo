@@ -193,6 +193,60 @@ distToDoor < 3.0
   ? ok(`Ernie's house door reachable — ${distToDoor.toFixed(2)}m`)
   : bad(`house door unreachable (${distToDoor.toFixed(2)}m)`);
 
+/* ----------------------------------------------- porch deck, steps and bench */
+section("the porch is a floor, not a picture of one");
+{
+  const porch = house.group.userData.porch;
+  porch
+    ? ok(`porch ${porch.width.toFixed(1)}m x ${porch.depth.toFixed(2)}m, deck top at y=${porch.top.toFixed(2)}`)
+    : bad("buildHouse recorded no porch layout");
+
+  if (porch) {
+    const topTread = porch.stepRise * porch.stepCount;
+    Math.abs(topTread - porch.top) < 0.01
+      ? ok(`top step is level with the deck (${topTread.toFixed(2)}m)`)
+      : bad(`top step at ${topTread.toFixed(2)}m but the deck is ${porch.top.toFixed(2)}m`);
+
+    const highestZ = porch.stepZ - (porch.stepCount - 1) * porch.stepRun;
+    highestZ - porch.stepRun / 2 >= porch.front - 0.02
+      ? ok(`steps stand outside the deck edge (${(highestZ - porch.stepRun / 2).toFixed(2)} vs front ${porch.front.toFixed(2)})`)
+      : bad(`steps overlap the deck: highest tread at ${highestZ.toFixed(2)}, front at ${porch.front.toFixed(2)}`);
+
+    const benchClearance = Math.abs(porch.benchX - porch.doorX) - 0.51;
+    benchClearance > 0.85
+      ? ok(`bench clears the doorway by ${benchClearance.toFixed(2)}m`)
+      : bad(`bench only ${benchClearance.toFixed(2)}m from the door centre — it blocks the way in`);
+
+    // stand in front of the steps and walk up onto the deck
+    const toWorld = (x, z) => new THREE.Vector3(x, 0, z).applyMatrix4(house.group.matrixWorld);
+    const approach = toWorld(porch.doorX, porch.stepZ + 1.8);
+    const inside = toWorld(porch.doorX, 3.6);
+    physics.body.setTranslation({ x: approach.x, y: 1.0, z: approach.z }, true);
+    let peak = -9;
+    for (let i = 0; i < 200; i++) {
+      const p = physics.body.translation();
+      const dx = inside.x - p.x;
+      const dz = inside.z - p.z;
+      const d = Math.hypot(dx, dz) || 1;
+      stepPlayer(physics, (dx / d) * 1.6, (dz / d) * 1.6, -2, 1 / 60);
+      peak = Math.max(peak, physics.body.translation().y - 0.7);
+    }
+    const end = physics.body.translation();
+    const floorHeight = end.y - 0.7;
+    Math.abs(floorHeight - porch.top) < 0.06
+      ? ok(`walked up the steps and stood on the deck at y=${floorHeight.toFixed(2)}`)
+      : bad(`ended up at y=${floorHeight.toFixed(2)} instead of on the ${porch.top.toFixed(2)}m deck`);
+    peak > porch.top - 0.06
+      ? ok(`climbed the steps on the way in (peak ${peak.toFixed(2)}m)`)
+      : bad(`never got up the steps (peak ${peak.toFixed(2)}m)`);
+
+    // the deck has to be solid: no falling through it back to ground level
+    floorHeight > porch.top - 0.09
+      ? ok("did not clip through the deck slab")
+      : bad(`sank through the deck to ${floorHeight.toFixed(2)}m`);
+  }
+}
+
 /* ------------------------------------------------------- modelling quality */
 section("modelled detail, not placeholder shapes");
 {

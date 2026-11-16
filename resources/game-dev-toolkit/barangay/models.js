@@ -697,6 +697,66 @@ export function stairs({ steps = 3, width = 1.4, rise = 0.22, run = 0.3, materia
   return g;
 }
 
+/**
+ * A porch bench — four legs, an apron, a slatted seat and a slatted back, so it
+ * reads as joinery instead of a table with two legs. The back is on local -z,
+ * which is the side that goes against the house wall.
+ */
+export function porchBench({
+  length = 1.7,
+  depth = 0.46,
+  seatHeight = 0.43,
+  material = null,
+} = {}) {
+  const g = new THREE.Group();
+  const wood = material ??
+    sharedMaterial(
+      "benchwood",
+      () => new THREE.MeshStandardMaterial({ map: TEX.wood(1, "#8a6a45"), roughness: 0.9 })
+    );
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(length, 0.035, depth * 0.86), wood);
+  seat.position.set(0, seatHeight, 0.05);
+  seat.castShadow = true;
+  g.add(seat);
+  // two seat boards laid side by side, with a shadow gap between them
+  for (const z of [-depth * 0.28, depth * 0.36]) {
+    const board = new THREE.Mesh(new THREE.BoxGeometry(length * 0.99, 0.03, depth * 0.3), wood);
+    board.position.set(0, seatHeight + 0.03, z + 0.05);
+    g.add(board);
+  }
+  // legs
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.055, seatHeight, 0.055), wood);
+      leg.position.set(sx * (length / 2 - 0.06), seatHeight / 2, 0.05 + sz * (depth / 2 - 0.07));
+      leg.castShadow = true;
+      g.add(leg);
+    }
+  }
+  // apron rails tying the legs together
+  for (const sz of [-1, 1]) {
+    const apron = new THREE.Mesh(new THREE.BoxGeometry(length - 0.12, 0.06, 0.03), wood);
+    apron.position.set(0, seatHeight - 0.055, 0.05 + sz * (depth / 2 - 0.07));
+    g.add(apron);
+  }
+  // back: two uprights, three slats, leaned back a little
+  const backH = 0.52;
+  const lean = 0.12;
+  for (const sx of [-1, 1]) {
+    const upright = new THREE.Mesh(new THREE.BoxGeometry(0.05, backH, 0.05), wood);
+    upright.position.set(sx * (length / 2 - 0.06), seatHeight + backH / 2 - 0.02, -depth / 2 + 0.06);
+    upright.rotation.x = -lean;
+    g.add(upright);
+  }
+  for (const t of [0.18, 0.52, 0.86]) {
+    const slat = new THREE.Mesh(new THREE.BoxGeometry(length - 0.1, 0.085, 0.028), wood);
+    slat.position.set(0, seatHeight + backH * t - 0.02, -depth / 2 + 0.06 - (t - 0.5) * backH * lean);
+    slat.rotation.x = -lean;
+    g.add(slat);
+  }
+  return g;
+}
+
 /* ------------------------------------------------------------------- props */
 /** Real lathe-turned clay jar (tapayan) or pot, not a plain cylinder. */
 export function jar({ height = 0.62, radius = 0.28, color = 0xa9663c, segments = 18 } = {}) {

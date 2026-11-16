@@ -7,7 +7,7 @@
  * the design notes — the original scene files were not recoverable.
  */
 import * as THREE from "three";
-import { buildHouse, gableRoof } from "./world.js";
+import { buildHouse, gableRoof, placeColliders } from "./world.js";
 import { jar, pottedPlant, mergeStaticGroup } from "./models.js";
 import * as TEX from "./textures.js";
 
@@ -294,17 +294,7 @@ export function createErniesHouse(scene, colliders) {
   group.rotation.y = Math.PI / 2; // front faces the road
   scene.add(group);
 
-  const cos = Math.cos(group.rotation.y);
-  const sin = Math.sin(group.rotation.y);
-  for (const c of localColliders) {
-    const hx = Math.abs(cos) * c.half[0] + Math.abs(sin) * c.half[2];
-    const hz = Math.abs(sin) * c.half[0] + Math.abs(cos) * c.half[2];
-    colliders.push({
-      half: [hx, c.half[1], hz],
-      pos: [group.position.x + c.pos[0] * cos + c.pos[2] * sin, c.pos[1], group.position.z - c.pos[0] * sin + c.pos[2] * cos],
-      tag: "ernie-house",
-    });
-  }
+  colliders.push(...placeColliders(localColliders, group, "ernie-house"));
 
   /* garden bed of pechay / talong seedlings in front */
   const soilMat = new THREE.MeshStandardMaterial({ map: TEX.mud(), color: 0x6a5540, roughness: 1 });

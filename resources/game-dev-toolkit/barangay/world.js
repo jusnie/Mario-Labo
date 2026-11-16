@@ -34,11 +34,35 @@ import {
   ventanilla,
   rainGutter,
   waterDrum,
+  porchBench,
   mergeStaticGroup,
   makeGlassMaterial,
 } from "./models.js";
 
 export { gableRoof };
+
+/**
+ * Turn the local collider descriptors a builder emits into world-space ones,
+ * carrying the group's position and rotation (and composing any rotation the
+ * collider itself carries, which the hidden stair ramps need).
+ */
+export function placeColliders(localColliders, group, tag) {
+  group.updateMatrixWorld(true);
+  const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  group.matrixWorld.decompose(pos, quat, scale);
+  return localColliders.map((c) => {
+    const p = new THREE.Vector3(c.pos[0], c.pos[1], c.pos[2]).applyMatrix4(group.matrixWorld);
+    const out = { half: [...c.half], pos: [p.x, p.y, p.z], tag: c.tag ?? tag };
+    const local = c.quat
+      ? new THREE.Quaternion(c.quat[0], c.quat[1], c.quat[2], c.quat[3])
+      : new THREE.Quaternion();
+    const q = quat.clone().multiply(local);
+    if (c.quat || Math.abs(q.w) < 0.999999) out.quat = [q.x, q.y, q.z, q.w];
+    return out;
+  });
+}
 
 export const LAYOUT = {
   startZ: 14,
@@ -530,10 +554,29 @@ export function buildHouse(opts = {}) {
   const door = doorUnit({ width: 1.02, height: 2.05, color: "#6b4f33" });
   door.position.set(doorX, floorH, depth / 2 + 0.03);
   group.add(door);
-  const doorSteps = stairs({ steps: stilted ? 4 : 2, width: 1.5, rise: 0.2, run: 0.3, material: concMat });
-  doorSteps.position.set(doorX, 0, depth / 2 + (porch ? 1.45 : 0.16));
-  doorSteps.rotation.y = Math.PI;
+
+  // Steps run DOWN away from the door, with the top tread level with the floor
+  // it serves. stairs() climbs toward -z, so they are placed on the +z side of
+  // the building with no extra rotation: highest tread inward, lowest outward.
+  const porchD = porch ? 1.45 : 0;
+  const deckTop = floorH;
+  const porchW = porch ? width * 0.78 : 0;
+  const deckFront = depth / 2 + porchD;
+  const stepCount = stilted ? 4 : 2;
+  const stepRise = deckTop / stepCount;
+  const stepRun = stilted ? 0.3 : 0.34;
+  const stepZ = deckFront + (stepCount - 1) * stepRun + stepRun / 2;
+  const doorSteps = stairs({ steps: stepCount, width: 1.5, rise: stepRise, run: stepRun, material: concMat });
+  doorSteps.position.set(doorX, 0, stepZ);
   group.add(doorSteps);
+  for (let i = 0; i < stepCount; i++) {
+    const top = (i + 1) * stepRise;
+    colliders.push({
+      half: [0.75, top / 2, stepRun / 2],
+      pos: [doorX, top / 2, stepZ - i * stepRun],
+      tag: "doorstep",
+    });
+  }
 
   const awning = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.06, 1.05), roofMat);
   awning.position.set(doorX, floorH + 2.42, depth / 2 + 0.5);
@@ -564,19 +607,31 @@ export function buildHouse(opts = {}) {
     group.add(drum);
   }
 
-  /* porch: deck, posts, canopy and balusters */
-  const porchD = porch ? 1.35 : 0;
+  /* porch: a raised terrace you can actually stand on, with posts, canopy,
+     balusters and a bench — and colliders, so the deck is a floor and not a
+     picture of one */
   if (porch) {
-    const porchW = width * 0.78;
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(porchW, 0.14, porchD), concMat);
-    deck.position.set(0, floorH + 0.02, depth / 2 + porchD / 2);
+    // solid mass to the floor level: no floating slab and no gap underneath
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(porchW, deckTop, porchD), concMat);
+    deck.position.set(0, deckTop / 2, depth / 2 + porchD / 2);
     deck.receiveShadow = true;
+    deck.castShadow = true;
     group.add(deck);
+    // nosing round the top edge so the terrace has a lip
+    const nosing = new THREE.Mesh(new THREE.BoxGeometry(porchW + 0.1, 0.06, porchD + 0.1), concMat);
+    nosing.position.set(0, deckTop - 0.03, depth / 2 + porchD / 2);
+    nosing.receiveShadow = true;
+    group.add(nosing);
+    colliders.push({
+      half: [porchW / 2 + 0.05, deckTop / 2, porchD / 2 + 0.05],
+      pos: [0, deckTop / 2, depth / 2 + porchD / 2],
+      tag: "porch-deck",
+    });
 
     const postTop = floorH + wallH - 0.1;
     for (const sx of [-1, 1]) {
-      const p = post({ height: postTop, radius: 0.075, material: bracketMat });
-      p.position.set(sx * (porchW / 2 - 0.12), 0, depth / 2 + porchD - 0.14);
+      const p = post({ height: postTop - deckTop, radius: 0.075, material: bracketMat });
+      p.position.set(sx * (porchW / 2 - 0.12), deckTop, depth / 2 + porchD - 0.14);
       group.add(p);
     }
     // canopy over the porch, so the posts carry something
@@ -591,28 +646,37 @@ export function buildHouse(opts = {}) {
 
     for (const sx of [-1, 1]) {
       const rail = railing({ length: porchD * 0.85, height: 0.95, spacing: 0.2 });
-      rail.position.set(sx * (porchW / 2 - 0.02), floorH + 0.08, depth / 2 + porchD * 0.48);
+      rail.position.set(sx * (porchW / 2 - 0.02), deckTop + 0.01, depth / 2 + porchD * 0.48);
       rail.rotation.y = Math.PI / 2;
       group.add(rail);
     }
-    const benchMat = new THREE.MeshStandardMaterial({ map: TEX.wood(1, "#7d6142"), roughness: 0.9 });
-    const porchBench = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.07, 0.36), benchMat);
-    porchBench.position.set(-porchW * 0.22, floorH + 0.45, depth / 2 + 0.55);
-    group.add(porchBench);
-    for (const sx of [-0.65, 0.65]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.44, 0.3), benchMat);
-      leg.position.set(-porchW * 0.22 + sx, floorH + 0.22, depth / 2 + 0.55);
-      group.add(leg);
-    }
+
+    // bench: against the wall, on the far side of the door, so it neither
+    // blocks the doorway nor stands in the middle of the walkway
+    const benchX = porchW * 0.28;
+    const bench = porchBench({ length: 1.7, depth: 0.46, seatHeight: 0.43 });
+    // porchBench's back is on local -z; the wall is on -z here, so no turn
+    bench.position.set(benchX, deckTop, depth / 2 + 0.27);
+    group.add(bench);
+    colliders.push({
+      half: [0.85, 0.48, 0.23],
+      pos: [benchX, deckTop + 0.48, depth / 2 + 0.27],
+      tag: "porch-bench",
+    });
   }
 
-  /* props */
-  const waterJar = jar({ height: 0.66, radius: 0.3, color: 0xa9663c });
-  waterJar.position.set(-width * 0.34, floorH, depth / 2 + 0.45);
+  /* props — on the porch floor when there is one, otherwise on the plinth */
+  const propY = porch ? deckTop : floorH;
+  const waterJar = jar({ height: 0.58, radius: 0.24, color: 0xa9663c });
+  waterJar.position.set(-(porch ? porchW / 2 - 0.32 : width * 0.34), propY, depth / 2 + (porch ? 0.34 : 0.45));
   group.add(waterJar);
   if (r() > 0.35) {
     const plant = pottedPlant({ scale: 0.9 + r() * 0.4 });
-    plant.position.set(width * 0.42, floorH, depth / 2 + 0.4);
+    plant.position.set(
+      porch ? porchW / 2 - 0.42 : width * 0.42,
+      propY,
+      depth / 2 + (porch ? porchD - 0.38 : 0.4)
+    );
     group.add(plant);
   }
   if (laundry) {
@@ -630,6 +694,20 @@ export function buildHouse(opts = {}) {
   colliders.push({ half: [width / 2 + 0.15, (wallH + rise) / 2 + floorH / 2, depth / 2 + 0.15], pos: [0, (wallH + rise) / 2 + floorH / 2, 0], tag: "house" });
   // facade layout, kept so the tests can prove the door and windows clear
   // each other instead of relying on me eyeballing it
+  group.userData.porch = porch
+    ? {
+        width: porchW,
+        depth: porchD,
+        top: deckTop,
+        front: deckFront,
+        doorX,
+        benchX: porchW * 0.28,
+        stepCount,
+        stepRise,
+        stepRun,
+        stepZ,
+      }
+    : null;
   group.userData.facade = {
     doorX,
     doorWidth: 1.02,
@@ -666,6 +744,7 @@ function buildHall(scene, colliders) {
   entrance.position.set(0, 0, D / 2 + 3.1);
   entrance.rotation.y = Math.PI;
   group.add(entrance);
+
 
   /* body */
   const body = new THREE.Mesh(new THREE.BoxGeometry(W, wallH, D), wallMat);
@@ -988,17 +1067,7 @@ export function buildWorld(scene, opts = {}) {
     group.position.set(x, 0, h.z);
     group.rotation.y = h.side < 0 ? Math.PI / 2 : -Math.PI / 2;
     scene.add(group);
-    const cos = Math.cos(group.rotation.y);
-    const sin = Math.sin(group.rotation.y);
-    for (const c of localColliders) {
-      const hx = Math.abs(cos) * c.half[0] + Math.abs(sin) * c.half[2];
-      const hz = Math.abs(sin) * c.half[0] + Math.abs(cos) * c.half[2];
-      colliders.push({
-        half: [hx, c.half[1], hz],
-        pos: [x + c.pos[0] * cos + c.pos[2] * sin, c.pos[1], h.z - c.pos[0] * sin + c.pos[2] * cos],
-        tag: "house",
-      });
-    }
+    colliders.push(...placeColliders(localColliders, group, "house"));
     houses.push({ group, glass });
   }
 
