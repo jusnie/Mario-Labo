@@ -1054,16 +1054,21 @@ function buildHall(scene, colliders) {
   lawn.receiveShadow = true;
   scene.add(lawn);
 
-  // clipped hedges flanking the approach, and pots either side of the steps
+  // clipped hedges flanking the approach, and pots standing on the lawn at the
+  // foot of the steps — the pots used to be placed at plinth height while
+  // standing on the grass, which left them hanging in mid-air
   const hedgeMat = new THREE.MeshStandardMaterial({ map: TEX.grass(4), color: 0x6d8a4c, roughness: 1 });
+  const props = [];
   for (const sx of [-1, 1]) {
     for (let i = 0; i < 3; i++) {
       const hedge = add(new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.75, 0.9), hedgeMat));
       hedge.position.set(sx * (5.8 + i * 0.05), 0.38, stepZ + 1.6 + i * 1.5);
+      props.push({ kind: "hedge", x: sx * (5.8 + i * 0.05), y: 0.005, z: stepZ + 1.6 + i * 1.5 });
     }
     const plant = pottedPlant({ scale: 1.35 });
-    plant.position.set(sx * 4.6, floorH, stepZ + 0.4);
+    plant.position.set(sx * 5.6, 0.02, stepZ + 1.1);
     group.add(plant);
+    props.push({ kind: "pot", x: sx * 5.6, y: 0.02, z: stepZ + 1.1 });
   }
 
   mergeStaticGroup(group);
@@ -1086,6 +1091,7 @@ function buildHall(scene, colliders) {
     ridgeHalfLength: roof.userData.ridgeHalfLength,
     signWidth: 6.6,
     flagTop: 10.8,
+    props,
   };
 
   return { group, glass, lamps, flag };

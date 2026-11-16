@@ -576,6 +576,17 @@ section("roofs slope the right way");
     ? ok(`hip roof: ${ridge.toFixed(1)}m ridge over a ${hall.width}m frontage (4 slopes, no gable)`)
     : bad(`ridge is ${ridge.toFixed(1)}m on a ${hall.width}m building`);
   hall.boxTop === undefined || true;
+  // nothing in the planting may hang in the air: a prop that is off the plinth
+  // has to be standing on the lawn
+  const offPlinth = (p) =>
+    Math.abs(p.x) > (hall.width + 3.2) / 2 || Math.abs(p.z) > (hall.depth + 3.2) / 2;
+  const floating = (hall.props ?? []).filter((p) =>
+    offPlinth(p) ? p.y > 0.06 : p.y > hall.floorH + 0.06
+  );
+  floating.length === 0
+    ? ok(`all ${hall.props.length} hall props stand on the ground or the plinth — nothing floats`)
+    : bad(`${floating.length} hall props float: ${floating.map((p) => `${p.kind}@${p.x.toFixed(1)},${p.z.toFixed(1)} y=${p.y}`).join(", ")}`);
+
   const apex = hall.wallTop + hall.roofRise;
   apex > hall.wallTop + 2 && apex < 14
     ? ok(`ridge peaks at ${apex.toFixed(1)}m, ${hall.roofRise}m above the eaves`)

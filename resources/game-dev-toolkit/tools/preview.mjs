@@ -310,6 +310,18 @@ if (which === "forecourt" || which === "all") {
   void world;
 }
 
+if (which === "hallsteps" || which === "all") {
+  // the entrance as the player walks up to it: pots, steps, doors
+  const scene = new THREE.Scene();
+  const hall = buildHall(scene, []);
+  render(
+    scene,
+    cameraAt({ x: 4.6, y: 1.7, z: LAYOUT.hallZ + 21 }, { x: 0, y: 3.2, z: LAYOUT.hallZ + 9 }, 58),
+    "preview-hallsteps.png"
+  );
+  void hall;
+}
+
 if (which === "store" || which === "all") {
   const scene = new THREE.Scene();
   const world = buildWorld(scene, { startHour: 15 });
