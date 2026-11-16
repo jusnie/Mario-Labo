@@ -1,0 +1,16 @@
+{
+  "name": "maria-labo-toolkit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Maria Labo: Nawawala - Three.js barangay prototype toolchain",
+  "scripts": {
+    "dev": "python3 barangay/serve.py",
+    "verify": "node verify-stack.mjs",
+    "walkthrough": "node walkthrough-test.mjs"
+  },
+  "dependencies": {
+    "three": "0.185.1",
+    "@dimforge/rapier3d-compat": "0.21.0"
+  }
+}

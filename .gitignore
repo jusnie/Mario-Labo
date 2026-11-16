@@ -1,0 +1,7 @@
+# runtime dependencies are reinstalled with `npm ci`; the browser bundles the
+# game actually loads are vendored in resources/game-dev-toolkit/vendor/
+node_modules/
+*/node_modules/
+__pycache__/
+*.pyc
+.DS_Store
