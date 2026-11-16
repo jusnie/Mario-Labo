@@ -1069,71 +1069,181 @@ export function gardenBed({ width = 5.6, depth = 2.2, ridges = 4, seed = 11, cro
   return g;
 }
 
+/**
+ * The ground disc, as a polar grid with colour in its vertices. A flat
+ * single-colour circle is the largest surface in the game and the flattest
+ * thing in it: patches of dry grass, damp hollows and worn paths baked per
+ * vertex cost nothing to draw and stop the village floor reading as a billiard
+ * table.
+ */
+export function groundDisc({ radius = 200, centerZ = 0, rings = 26, segments = 128, seed = 9 } = {}) {
+  const noise = makeNoise(seed);
+  const pos = [];
+  const colors = [];
+  const uvs = [];
+  const idx = [];
+  const base = new THREE.Color(0xc9c7a4);
+  const dry = new THREE.Color(0xbfb387);
+  const damp = new THREE.Color(0x8f9a6b);
+  const worn = new THREE.Color(0xb0a98c);
+  const tmp = new THREE.Color();
+
+  const uvFor = (x, z) => [x / (2 * radius) + 0.5, z / (2 * radius) + 0.5];
+  pos.push(0, 0, centerZ);
+  colors.push(base.r, base.g, base.b);
+  uvs.push(...uvFor(0, 0));
+
+  for (let i = 1; i <= rings; i++) {
+    const t = i / rings;
+    const r = radius * Math.pow(t, 1.15);
+    for (let j = 0; j < segments; j++) {
+      const a = (j / segments) * Math.PI * 2;
+      const x = Math.cos(a) * r;
+      const z = Math.sin(a) * r + centerZ;
+      pos.push(x, 0, z);
+      uvs.push(...uvFor(x, z));
+      // three scales of patchiness, plus a worn band where the road runs
+      const patch = noise.fbm(x * 0.012, z * 0.012, 3);
+      const fine = noise.fbm(x * 0.05 + 40, z * 0.05 - 12, 2);
+      tmp.copy(base);
+      tmp.lerp(dry, THREE.MathUtils.smoothstep(patch, 0.52, 0.78) * 0.55);
+      tmp.lerp(damp, THREE.MathUtils.smoothstep(patch, 0.42, 0.16) * 0.4);
+      tmp.lerp(worn, THREE.MathUtils.smoothstep(Math.abs(x), 6, 2.4) * 0.25);
+      tmp.multiplyScalar(0.9 + (fine - 0.5) * 0.22);
+      colors.push(tmp.r, tmp.g, tmp.b);
+    }
+  }
+  for (let j = 0; j < segments; j++) {
+    idx.push(0, 1 + ((j + 1) % segments), 1 + j);
+  }
+  for (let i = 1; i < rings; i++) {
+    for (let j = 0; j < segments; j++) {
+      const a = 1 + (i - 1) * segments + j;
+      const b = 1 + (i - 1) * segments + ((j + 1) % segments);
+      const c = 1 + i * segments + j;
+      const d = 1 + i * segments + ((j + 1) % segments);
+      idx.push(a, b, c, b, d, c);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * A spray of leaves around a point: enough quads, pointing outward and tipped
+ * over, that a bush has an edge made of leaves rather than of facets.
+ */
+export function leafSpray({ count = 26, radius = 0.5, height = 0.8, leafLength = 0.34, seed = 5, droop = 0.45 } = {}) {
+  const noise = makeNoise(seed);
+  const parts = [];
+  const quad = () => {
+    const g = new THREE.BufferGeometry();
+    // a leaf is a quad: base, tip, and two shoulders, slightly cupped
+    g.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(
+        [-0.5, 0, 0, 0.5, 0, 0, 0.34, 1, 0.08, -0.34, 1, 0.08].map((v) => v),
+        3
+      )
+    );
+    g.setAttribute("uv", new THREE.Float32BufferAttribute([0, 0, 1, 0, 0.86, 1, 0.14, 1], 2));
+    g.setIndex([0, 1, 2, 0, 2, 3]);
+    return g;
+  };
+  for (let i = 0; i < count; i++) {
+    const g = quad();
+    const a = (i / count) * Math.PI * 2 + noise(i, 1) * 0.9;
+    const up = -0.25 + noise(i, 2) * 1.5; // where on the dome the leaf sits
+    const rad = radius * (0.55 + noise(i, 3) * 0.6);
+    const y = height * (0.35 + (up + 0.3) * 0.42);
+    const len = leafLength * (0.75 + noise(i, 4) * 0.6);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler(
+      -Math.PI / 2 + droop * (0.4 + noise(i, 5)) - up * 0.5,
+      -a + Math.PI / 2,
+      (noise(i, 6) - 0.5) * 0.7
+    );
+    q.setFromEuler(e);
+    m.compose(
+      new THREE.Vector3(Math.cos(a) * rad, y, Math.sin(a) * rad),
+      q,
+      new THREE.Vector3(len * 0.9, len, len)
+    );
+    g.applyMatrix4(m);
+    parts.push(g);
+  }
+  return mergeGeometries(parts, false);
+}
+
 export function shrub({ radius = 0.55, height = 0.85, seed = 5, planter = false, planterMaterial = null } = {}) {
   const g = new THREE.Group();
   const r = makeNoise(seed);
-  const leafMat = sharedMaterial("shrub-leaf", () =>
-    new THREE.MeshStandardMaterial({ color: 0x476f35, roughness: 0.95, flatShading: true })
-  );
-  const deepMat = sharedMaterial("shrub-leaf-deep", () =>
-    new THREE.MeshStandardMaterial({ color: 0x33552a, roughness: 0.95, flatShading: true })
-  );
 
-  const blobs = 5;
-  for (let i = 0; i < blobs; i++) {
-    const geo = new THREE.IcosahedronGeometry(radius * (0.52 + r(i, 1) * 0.34), 1);
-    const pos = geo.attributes.position;
-    const v = new THREE.Vector3();
-    for (let k = 0; k < pos.count; k++) {
-      v.fromBufferAttribute(pos, k);
-      v.multiplyScalar(0.84 + r(k * 0.37 + i * 3.1, 9) * 0.34);
-      pos.setXYZ(k, v.x, v.y * 0.82, v.z);
-    }
-    geo.computeVertexNormals();
-    const blob = new THREE.Mesh(geo, i % 2 ? deepMat : leafMat);
-    const a = (i / blobs) * Math.PI * 2 + r(i, 3) * 0.7;
-    const spread = i === 0 ? 0 : radius * 0.46;
-    blob.position.set(
-      Math.cos(a) * spread,
-      height * 0.5 + (r(i, 4) - 0.35) * height * 0.22,
-      Math.sin(a) * spread
-    );
-    blob.rotation.y = a;
-    blob.castShadow = true;
-    blob.receiveShadow = true;
-    g.add(blob);
-  }
+  // the dark mass inside, so the bush is not see-through and reads as dense
+  const coreMat = sharedMaterial("shrub-core", () =>
+    new THREE.MeshStandardMaterial({ color: 0x2c4423, roughness: 1, flatShading: true })
+  );
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(radius * 0.62, 1), coreMat);
+  core.scale.y = height / (radius * 1.5);
+  core.position.y = height * 0.48;
+  core.castShadow = true;
+  g.add(core);
 
+  // leaves: two sprays, the outer one lighter, so the silhouette is foliage
+  const sprayMat = sharedMaterial("shrub-spray", () =>
+    new THREE.MeshStandardMaterial({
+      map: TEX.leafSprig("#5d8a3a", 7),
+      alphaTest: 0.45,
+      side: THREE.DoubleSide,
+      roughness: 0.85,
+    })
+  );
+  const sprayMatDeep = sharedMaterial("shrub-spray-deep", () =>
+    new THREE.MeshStandardMaterial({
+      map: TEX.leafSprig("#3f6b2a", 13),
+      alphaTest: 0.45,
+      side: THREE.DoubleSide,
+      roughness: 0.9,
+    })
+  );
+  const outer = new THREE.Mesh(
+    leafSpray({ count: 46, radius: radius * 0.95, height, leafLength: radius * 0.48, seed: seed + 1 }),
+    sprayMat
+  );
+  outer.castShadow = true;
+  g.add(outer);
+  const inner = new THREE.Mesh(
+    leafSpray({ count: 24, radius: radius * 0.6, height: height * 0.9, leafLength: radius * 0.4, seed: seed + 7, droop: 0.8 }),
+    sprayMatDeep
+  );
+  inner.castShadow = true;
+  g.add(inner);
+
+  // a few upright blades at the base
   const blades = new THREE.Mesh(
-    bladeClump(
-      9,
-      { length: height * 0.6, width: 0.1, curve: 0.55, rise: 1.15, fold: 0.25, segsL: 4, segsW: 1 },
-      seed + 3
-    ),
-    sharedMaterial("shrub-blades", () =>
-      new THREE.MeshStandardMaterial({ color: 0x577f3a, roughness: 0.9, side: THREE.DoubleSide })
-    )
+    bladeClump(7, { length: height * 0.55, width: 0.09, curve: 0.55, rise: 1.15, fold: 0.25, segsL: 4, segsW: 1 }, seed + 3),
+    sprayMatDeep
   );
-  blades.position.y = height * 0.62;
   g.add(blades);
 
   if (planter) {
-    const mat =
-      planterMaterial ??
-      sharedMaterial("planter-concrete", () =>
-        new THREE.MeshStandardMaterial({ map: TEX.concrete(2), color: 0xd6d0c2, roughness: 1 })
-      );
-    const box = new THREE.Mesh(new THREE.BoxGeometry(radius * 2.5, height * 0.42, radius * 2.1), mat);
-    box.position.y = height * 0.21;
-    box.castShadow = true;
-    box.receiveShadow = true;
-    g.add(box);
-    for (const child of g.children) if (child !== box) child.position.y += height * 0.34;
+    const potMat =
+      planterMaterial ?? sharedMaterial("planter-clay", () => new THREE.MeshStandardMaterial({ color: 0x9a5b3c, roughness: 0.9 }));
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.55, radius * 0.42, height * 0.4, 12), potMat);
+    pot.position.y = height * 0.2;
+    pot.castShadow = true;
+    g.add(pot);
   }
-
   return g;
 }
 
+/** Bamboo fence run: poles, two ties and vertical slats. */
 export function clothesline({ length = 3.4, height = 1.8, colors = [0xd8d2c0, 0x9fb4c8, 0xc9a08a] } = {}) {
   const g = new THREE.Group();
   const postMat = new THREE.MeshStandardMaterial({ map: TEX.wood(1, "#6a5136"), roughness: 0.95 });
@@ -1170,7 +1280,6 @@ export function clothesline({ length = 3.4, height = 1.8, colors = [0xd8d2c0, 0x
   return g;
 }
 
-/** Bamboo fence run: poles, two ties and vertical slats. */
 export function bambooFence({ length = 4, height = 1.2, material = null } = {}) {
   const g = new THREE.Group();
   const mat = material ?? new THREE.MeshStandardMaterial({ map: TEX.wood(1, "#8a7a45"), roughness: 0.95 });

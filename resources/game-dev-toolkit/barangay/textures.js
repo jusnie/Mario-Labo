@@ -149,6 +149,82 @@ export function grass(repeat = 26) {
   return tex;
 }
 
+/**
+ * A transplanted paddy, as seen from standing height: rows of rice hills with
+ * water showing in the furrows between them. Geometry can only afford a hill
+ * every metre or so, which reads as stubble on a lawn - the texture carries the
+ * canopy and the standing water, the instanced tufts carry the silhouette.
+ */
+export function paddy(repeat = 1, rows = 10) {
+  const key = `paddy${repeat}_${rows}`;
+  if (cache.has(key)) return cache.get(key);
+  const size = 512;
+  const { c, ctx } = canvas(size);
+  const r = rnd(77);
+  // water over mud
+  const g = ctx.createLinearGradient(0, 0, size, size);
+  g.addColorStop(0, "#556b39");
+  g.addColorStop(0.5, "#475c31");
+  g.addColorStop(1, "#5d733d");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  speckle(ctx, size, 320, ["#647a3f", "#3c4f2b", "#6f8646"], 6, 30, 3);
+  const cell = size / rows;
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < rows; j++) {
+      const cx = (j + 0.5) * cell + (r() - 0.5) * cell * 0.16;
+      const cy = (i + 0.5) * cell + (r() - 0.5) * cell * 0.16;
+      const vigour = 0.7 + r() * 0.55;
+      const blades = 18;
+      for (let k = 0; k < blades; k++) {
+        const a = (k / blades) * Math.PI * 2 + r() * 0.8;
+        const len = (cell * (0.42 + r() * 0.26)) * vigour;
+        const col = ["#6d8a36", "#7d9a3f", "#5c7a2e", "#8aa64a", "#9aa855"][(r() * 5) | 0];
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1.5 + r() * 1.4;
+        ctx.globalAlpha = 0.75 + r() * 0.25;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.quadraticCurveTo(
+          cx + Math.cos(a) * len * 0.55,
+          cy + Math.sin(a) * len * 0.55 - len * 0.18,
+          cx + Math.cos(a) * len,
+          cy + Math.sin(a) * len - len * 0.1
+        );
+        ctx.stroke();
+      }
+      // the wet shadow of each hill
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = "#2c3a23";
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + cell * 0.1, cell * 0.3, cell * 0.16, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+  // fine grass over the top: without it every hill keeps its star-shaped
+  // stamp and the plot reads as wallpaper rather than a crop
+  for (let i = 0; i < 5200; i++) {
+    const x = r() * size;
+    const y = r() * size;
+    const len = 3 + r() * 9;
+    const a = -Math.PI / 2 + (r() - 0.5) * 2.4;
+    ctx.strokeStyle = ["#6d8a36", "#7d9a3f", "#5c7a2e", "#8aa64a", "#576f2b"][(r() * 5) | 0];
+    ctx.globalAlpha = 0.35 + r() * 0.45;
+    ctx.lineWidth = 0.7 + r() * 1.1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  // weedier edges and a couple of bare mud patches
+  speckle(ctx, size, 60, ["#8b7f4a", "#6a6136"], 8, 26, 4);
+  const tex = finish(c, repeat);
+  cache.set(key, tex);
+  return tex;
+}
+
 export function dirtRoad(repeat = 1) {
   if (cache.has("dirt" + repeat)) return cache.get("dirt" + repeat);
   const size = 512;
@@ -395,6 +471,66 @@ export function glassPane() {
  * scale of a canopy or a scree slope. Without it a 200 m ridge lit by one
  * directional light is a smooth pastel shape.
  */
+/**
+ * One leaf, for sprays: alpha-cut, midrib, side veins, a little curl shading.
+ * Shrubs built from icosahedron blobs read as hedge-shaped rocks; a few dozen
+ * of these on a dark core read as a bush.
+ */
+export function leafSprig(tone = "#5d8a3a", seed = 7) {
+  const key = `leafsprig${tone}${seed}`;
+  if (cache.has(key)) return cache.get(key);
+  const w = 128;
+  const h = 256;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, w, h);
+  const dark = new THREE.Color(tone).multiplyScalar(0.62);
+  const light = new THREE.Color(tone).multiplyScalar(1.25);
+  // leaf blade
+  const g = ctx.createLinearGradient(0, h, 0, 0);
+  g.addColorStop(0, `#${dark.getHexString()}`);
+  g.addColorStop(0.55, tone);
+  g.addColorStop(1, `#${light.getHexString()}`);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(w / 2, h * 0.99);
+  ctx.bezierCurveTo(w * 0.02, h * 0.72, w * 0.06, h * 0.28, w / 2, h * 0.02);
+  ctx.bezierCurveTo(w * 0.94, h * 0.28, w * 0.98, h * 0.72, w / 2, h * 0.99);
+  ctx.fill();
+  // midrib
+  ctx.strokeStyle = `rgba(${Math.round(dark.r * 210)},${Math.round(dark.g * 210)},${Math.round(dark.b * 210)},0.55)`;
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(w / 2, h * 0.97);
+  ctx.lineTo(w / 2, h * 0.06);
+  ctx.stroke();
+  // side veins
+  ctx.lineWidth = 1;
+  const r = rnd(seed);
+  for (let i = 1; i < 9; i++) {
+    const y = h * (0.1 + (i / 9) * 0.82);
+    for (const dir of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(w / 2, y);
+      ctx.quadraticCurveTo(
+        w / 2 + dir * w * 0.22,
+        y - h * 0.03 - r() * 4,
+        w / 2 + dir * w * (0.3 + r() * 0.08),
+        y - h * 0.1 - r() * 6
+      );
+      ctx.strokeStyle = `rgba(${Math.round(dark.r * 220)},${Math.round(dark.g * 220)},${Math.round(dark.b * 220)},0.3)`;
+      ctx.stroke();
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  cache.set(key, tex);
+  return tex;
+}
+
 export function mountainDetail(repeat = 1) {
   const key = `mtndetail${repeat}`;
   if (cache.has(key)) return cache.get(key);

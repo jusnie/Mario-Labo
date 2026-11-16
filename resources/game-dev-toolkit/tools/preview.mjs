@@ -290,7 +290,8 @@ function render(scene, camera, outPath) {
     const uvs = geo.attributes.uv ?? null;
     const tdata = textureData(mat.map);
     const texPixel = [0, 0, 0, 1];
-    const alphaBlend = !!mat.transparent && !!tdata;
+    // transparent things without a map (water, glass sheets) still blend
+    const alphaBlend = !!mat.transparent;
     const triCount = index ? index.count / 3 : pos.count / 3;
     const instCol = obj.isInstancedMesh && obj.instanceColor ? obj.instanceColor : null;
 
@@ -437,9 +438,19 @@ function render(scene, camera, outPath) {
               colour[ci + 2] = b0;
             }
           } else {
-            colour[ci] = encodeSRGB(acesOne(cr * irrR * EXPOSURE)) * 255;
-            colour[ci + 1] = encodeSRGB(acesOne(cg * irrG * EXPOSURE)) * 255;
-            colour[ci + 2] = encodeSRGB(acesOne(cb * irrB * EXPOSURE)) * 255;
+            const r0 = encodeSRGB(acesOne(cr * irrR * EXPOSURE)) * 255;
+            const g0 = encodeSRGB(acesOne(cg * irrG * EXPOSURE)) * 255;
+            const b0 = encodeSRGB(acesOne(cb * irrB * EXPOSURE)) * 255;
+            if (alphaBlend) {
+              const al = mat.opacity ?? 1;
+              colour[ci] = colour[ci] * (1 - al) + r0 * al;
+              colour[ci + 1] = colour[ci + 1] * (1 - al) + g0 * al;
+              colour[ci + 2] = colour[ci + 2] * (1 - al) + b0 * al;
+            } else {
+              colour[ci] = r0;
+              colour[ci + 1] = g0;
+              colour[ci + 2] = b0;
+            }
           }
           if (mat.emissive && mat.emissiveIntensity > 0) {
             const e = mat.emissiveIntensity;
@@ -696,6 +707,18 @@ if (which === "store" || which === "all") {
   // stand on the road, a little off the counter axis, so the open front and the
   // shelves behind it both read
   render(scene, cameraAt({ x: 3.2, y: 1.7, z: -2.2 }, { x: 10.5, y: 1.35, z: -6.9 }, 54), "preview-store.png");
+  void world;
+}
+
+if (which === "fields" || which === "all") {
+  // eye height beside the paddy on the east side: the closest look at the crop
+  const scene = new THREE.Scene();
+  const world = buildWorld(scene, { startHour: 15 });
+  render(
+    scene,
+    cameraAt({ x: 22.5, y: 1.65, z: -80 }, { x: 36, y: 0.4, z: -104 }),
+    "preview-fields.png"
+  );
   void world;
 }
 

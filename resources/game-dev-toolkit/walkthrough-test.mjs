@@ -279,8 +279,13 @@ section("modelled detail, not placeholder shapes");
   box.max.y > 40 ? ok("terrain rises into hills/mountains away from the village") : bad("terrain is flat");
 
   // the village floor must stay flat where people walk
-  const flatGround = scene.children.find((o) => o.isMesh && o.geometry?.type === "CircleGeometry");
-  flatGround ? ok("village floor is a flat disc meeting the terrain ring") : bad("no flat village floor");
+  const flatGround = scene.children.find(
+    (o) => o.isMesh && o.geometry?.attributes?.position && o.name !== "horizonTerrain" && o.material?.map
+  );
+  const groundBox = flatGround ? new THREE.Box3().setFromObject(flatGround) : null;
+  flatGround && groundBox.max.y < 0.01
+    ? ok(`village floor is a flat disc meeting the terrain ring (${flatGround.geometry.attributes.position.count} vertices)`)
+    : bad("no flat village floor");
 
   for (const [i, h] of world3d.houses.slice(0, 3).entries()) {
     const b = h.group.userData.batched;

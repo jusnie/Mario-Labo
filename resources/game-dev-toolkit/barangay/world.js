@@ -31,6 +31,7 @@ import {
   jar,
   pottedPlant,
   shrub,
+  groundDisc,
   groundShadow,
   clothesline,
   bambooFence,
@@ -172,19 +173,46 @@ function bananaPlantGeometry(seed) {
   const trunkGeo = mergeGeometries(sheaths, false);
   sheaths.forEach((g) => g.dispose());
 
-  const leafCount = 7 + Math.floor(r() * 3);
+  const leafCount = 9 + Math.floor(r() * 4);
   const leaves = [];
   for (let i = 0; i < leafCount; i++) {
     const leaf = bladeGeometry({
-      length: 1.6 + r() * 1.0,
+      length: 1.5 + r() * 1.1,
       width: 0.4 + r() * 0.3,
-      curve: 1.05,
-      rise: 0.92,
+      curve: 1.15 + r() * 0.25,
+      rise: 0.9,
       fold: 0.4 + r() * 0.25,
       shred: 0.06,
       segsL: 11,
       segsW: 4,
     });
+    // Banana leaves are never one green: the midrib sits in shade, the edges
+    // catch light, tips yellow off and the oldest leaves at the bottom of the
+    // crown go brown. Painting that into the geometry costs nothing to draw.
+    const posA = leaf.attributes.position;
+    const uvA = leaf.attributes.uv;
+    const col = new Float32Array(posA.count * 3);
+    const age = i / leafCount;
+    const tone = 0.86 + r() * 0.24;
+    const old = Math.max(0, age - 0.72) / 0.28; // the lowest leaves die first
+    const tint = new THREE.Color().setRGB(tone, tone * (0.98 + r() * 0.08), tone * 0.82);
+    if (old > 0) tint.lerp(new THREE.Color(0.62, 0.5, 0.26), old * 0.8);
+    for (let k = 0; k < posA.count; k++) {
+      const u = uvA.getX(k);
+      const v = uvA.getY(k);
+      const edge = Math.abs(u * 2 - 1); // 0 at the midrib, 1 at the edge
+      const cupped = 0.62 + edge * 0.34; // fold shadow in the fold itself
+      const tipWarm = THREE.MathUtils.smoothstep(v, 0.72, 1) * 0.16;
+      const base = 1 - THREE.MathUtils.smoothstep(1 - v, 0.86, 1) * 0.3;
+      const c = tint.clone().multiplyScalar(cupped * base);
+      c.r += tipWarm * 0.22;
+      c.g += tipWarm * 0.18;
+      c.b += tipWarm * 0.04;
+      col[k * 3] = c.r;
+      col[k * 3 + 1] = c.g;
+      col[k * 3 + 2] = c.b;
+    }
+    leaf.setAttribute("color", new THREE.BufferAttribute(col, 3));
     const azimuth = (i / leafCount) * Math.PI * 2 + r() * 0.55;
     const tilt = -0.1 - r() * 0.9;
     const roll = (r() - 0.5) * 0.45;
@@ -231,8 +259,8 @@ function buildGrove(scene, colliders) {
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x93a05a, roughness: 0.95, flatShading: true });
   const leafMat = new THREE.MeshStandardMaterial({
     map: TEX.bananaLeaf(),
-    color: 0xdfe8c8,
-    roughness: 0.78,
+    vertexColors: true,
+    roughness: 0.72,
     side: THREE.DoubleSide,
   });
 
@@ -266,10 +294,21 @@ function buildGrove(scene, colliders) {
 /* ----------------------------------------------------------------- fields */
 function buildFields(scene) {
   const r = rngFactory(4242);
-  const mudMat = new THREE.MeshStandardMaterial({ map: TEX.mud(), roughness: 0.95 });
+  const paddyTex = TEX.paddy(1, 10);
+  const paddyMat = new THREE.MeshStandardMaterial({
+    map: paddyTex,
+    roughness: 0.62,
+    metalness: 0.05,
+    vertexColors: true,
+    normalMap: TEX.noiseNormal({ repeat: 1, strength: 0.5, scale: 18, seed: 71 }),
+    normalScale: new THREE.Vector2(0.3, 0.3),
+  });
+  // a paddy is rows of hills standing in water, and it reads as one only when
+  // the water is visible between the rows: the map carries that, the instanced
+  // tufts carry the silhouette and the shadows.
   const bundMat = new THREE.MeshStandardMaterial({ color: 0x6b5a44, roughness: 1 });
   const riceMat = new THREE.MeshStandardMaterial({
-    color: 0x79953f,
+    color: 0x8fa64b,
     roughness: 0.88,
     side: THREE.DoubleSide,
   });
@@ -277,7 +316,7 @@ function buildFields(scene) {
   // a real rice clump: three curved blades, not three flat triangles
   const riceTuft = bladeClump(
     3,
-    { length: 0.52, width: 0.075, curve: 0.95, rise: 1.0, fold: 0.25, segsL: 4, segsW: 1 },
+    { length: 0.62, width: 0.085, curve: 0.95, rise: 1.0, fold: 0.25, segsL: 5, segsW: 1 },
     4242
   );
 
@@ -290,7 +329,26 @@ function buildFields(scene) {
   ];
   const instances = [];
   for (const p of plots) {
-    const bed = new THREE.Mesh(new THREE.PlaneGeometry(p.w, p.d), mudMat);
+    const bedGeo = new THREE.PlaneGeometry(p.w, p.d, 10, 10);
+    // one texture tile covers 2.6m, so hills land ~26cm apart whatever the plot
+    const bedUv = bedGeo.attributes.uv;
+    for (let i = 0; i < bedUv.count; i++) {
+      bedUv.setXY(i, bedUv.getX(i) * (p.w / 2.6), bedUv.getY(i) * (p.d / 2.6));
+    }
+    // the tile repeats every 2.6m; a patch of light and shade over the whole
+    // plot hides the grid and reads as uneven growth
+    const bedPos = bedGeo.attributes.position;
+    const bedCol = new Float32Array(bedPos.count * 3);
+    for (let i = 0; i < bedPos.count; i++) {
+      const nx = bedPos.getX(i) + p.x;
+      const nz = bedPos.getY(i) + p.z;
+      const v = 0.84 + 0.3 * (0.5 + 0.5 * Math.sin(nx * 0.21) * Math.cos(nz * 0.17)) + (r() - 0.5) * 0.1;
+      bedCol[i * 3] = v;
+      bedCol[i * 3 + 1] = v * (0.98 + (r() - 0.5) * 0.06);
+      bedCol[i * 3 + 2] = v * 0.92;
+    }
+    bedGeo.setAttribute("color", new THREE.BufferAttribute(bedCol, 3));
+    const bed = new THREE.Mesh(bedGeo, paddyMat);
     bed.rotation.x = -Math.PI / 2;
     bed.position.set(p.x, 0.035, p.z);
     bed.receiveShadow = true;
@@ -306,14 +364,14 @@ function buildFields(scene) {
       bund.receiveShadow = true;
       scene.add(bund);
     }
-    const rows = Math.floor(p.d / 1.15);
-    const cols = Math.floor(p.w / 1.15);
+    const rows = Math.floor(p.d / 0.9);
+    const cols = Math.floor(p.w / 0.9);
     for (let i = 0; i < rows; i++) {
       for (let j = 0; j < cols; j++) {
         if (r() < 0.05) continue;
         instances.push({
-          x: p.x - p.w / 2 + 0.7 + j * 1.15 + (r() - 0.5) * 0.2,
-          z: p.z - p.d / 2 + 0.7 + i * 1.15 + (r() - 0.5) * 0.2,
+          x: p.x - p.w / 2 + 0.7 + j * 0.9 + (r() - 0.5) * 0.18,
+          z: p.z - p.d / 2 + 0.7 + i * 0.9 + (r() - 0.5) * 0.18,
           s: 0.8 + r() * 0.5,
           rot: r() * 6.28,
         });
@@ -1252,12 +1310,13 @@ export function buildWorld(scene, opts = {}) {
     map: TEX.grass(90),
     normalMap: TEX.noiseNormal({ repeat: 90, strength: 0.9, scale: 40, seed: 5 }),
     normalScale: new THREE.Vector2(0.55, 0.55),
-    color: 0xc9c7a4,
+    vertexColors: true,
     roughness: 1,
   });
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(LAYOUT.groundRadius, 96), groundMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(0, 0, LAYOUT.groundCenterZ);
+  const ground = new THREE.Mesh(
+    groundDisc({ radius: LAYOUT.groundRadius, centerZ: LAYOUT.groundCenterZ }),
+    groundMat
+  );
   ground.receiveShadow = true;
   scene.add(ground);
 
@@ -1426,7 +1485,7 @@ export function buildWorld(scene, opts = {}) {
 
   const moon = new THREE.DirectionalLight(0x9fb6e0, 0.0);
   scene.add(moon);
-  const ambient = new THREE.AmbientLight(0x334455, 0.35);
+  const ambient = new THREE.AmbientLight(0x6b5f52, 0.35);
   scene.add(ambient);
 
   const windowMats = [...hall.glass, ...houses.flatMap((h) => h.glass)];
@@ -1465,7 +1524,11 @@ export function buildWorld(scene, opts = {}) {
     hemi.intensity = 0.16 + day * 1.15;
     hemi.color.copy(pal.top).lerp(white, 0.35);
     hemi.groundColor.setHex(0x6b5f45).lerp(new THREE.Color(0x2a2418), night);
-    ambient.intensity = 0.12 + day * 0.2;
+    // ambient is the ground bounce: a shaded wall in the tropics goes warm and
+    // pale, not blue-grey, and a cold ambient was what flattened every facade
+    // facing away from the sun
+    ambient.intensity = 0.14 + day * 0.26;
+    ambient.color.setHex(0x6b5f52).lerp(new THREE.Color(0x1a2230), night);
 
     // the sun loses almost all of its punch as it reddens at the horizon
     sun.intensity = day * (2.35 - dusk * 0.75);
