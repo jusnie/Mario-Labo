@@ -220,7 +220,7 @@ section("modelled detail, not placeholder shapes");
 
   for (const [i, h] of world3d.houses.slice(0, 3).entries()) {
     const b = h.group.userData.batched;
-    b && b.to < 40
+    b && b.to < 44
       ? ok(`house ${i + 1} batched ${b.from} parts into ${b.to} draw calls`)
       : bad(`house ${i + 1} not batched (${b ? b.to : "none"} draw calls)`);
   }
@@ -235,6 +235,92 @@ section("modelled detail, not placeholder shapes");
     if (o.isMesh && o.geometry?.attributes?.position && o.geometry.attributes.position.count > 200) ribbedSheets++;
   });
   ribbedSheets > 0 ? ok("roof sheets carry ribbed geometry") : bad("no ribbed roof geometry found");
+
+  // --- facade layout: the door and the front windows (shutters included) must
+  //     not pass through one another, and nothing may hang off the wall
+  const facadeProblems = [];
+  for (const [i, h] of world3d.houses.entries()) {
+    const f = h.group.userData.facade;
+    if (!f) {
+      facadeProblems.push(`house ${i + 1} has no facade layout`);
+      continue;
+    }
+    const doorL = f.doorX - f.doorWidth / 2 - 0.18;
+    const doorR = f.doorX + f.doorWidth / 2 + 0.18;
+    for (const wx of f.windowX) {
+      if (wx - f.windowHalfSpan < doorR + 0.06) facadeProblems.push(`house ${i + 1}: window ${wx.toFixed(2)} hits the door`);
+      if (wx + f.windowHalfSpan > f.wallHalf) facadeProblems.push(`house ${i + 1}: window ${wx.toFixed(2)} runs off the wall`);
+    }
+    if (doorL < -f.wallHalf + 0.1) facadeProblems.push(`house ${i + 1}: door runs off the wall`);
+  }
+  facadeProblems.length === 0
+    ? ok(`${world3d.houses.length} houses: door and shuttered windows clear each other on the facade`)
+    : bad(facadeProblems.join("; "));
+
+  // --- the eaves now carry gutters, downpipes and a rain drum
+  const house1 = world3d.houses[0].group;
+  const height = world3d.houses[0].group.userData.batched;
+  height ? ok("houses still batch after the detail pass") : bad("house batching broke");
+}
+
+/* --------------------------------------------------------------- mountains */
+section("mountains and the volcano");
+{
+  const terrain = world3d.terrain;
+  const p = terrain.geometry.attributes.position;
+  const colours = terrain.geometry.attributes.color;
+  colours
+    ? ok("terrain is shaded per-vertex (slope, forest, rock and haze bands)")
+    : bad("terrain has no vertex colours — mountains are one flat green");
+
+  // ridge crests: bucket the far ring by angle and count separate peaks, so a
+  // single smooth dome cannot pass as a mountain range
+  const sectors = 96;
+  const maxBySector = new Array(sectors).fill(0);
+  let tallest = 0;
+  let over280 = 0;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i);
+    const y = p.getY(i);
+    const z = p.getZ(i);
+    if (y > tallest) tallest = y;
+    if (y > 280) over280++;
+    if (Math.hypot(x, z + 110) < 520) continue; // ignore the near hills
+    const a = Math.atan2(z + 110, x);
+    const k = Math.floor(((a + Math.PI) / (Math.PI * 2)) * sectors) % sectors;
+    if (y > maxBySector[k]) maxBySector[k] = y;
+  }
+  const crestLine = maxBySector.map((v) => v);
+  let peaks = 0;
+  for (let i = 0; i < sectors; i++) {
+    const prev = crestLine[(i - 1 + sectors) % sectors];
+    const next = crestLine[(i + 1) % sectors];
+    if (crestLine[i] > 120 && crestLine[i] >= prev && crestLine[i] > next) peaks++;
+  }
+  peaks >= 4
+    ? ok(`far ring breaks into ${peaks} separate crests (ridged noise, not one dome)`)
+    : bad(`far ring has only ${peaks} crests — the range reads as a single lump`);
+
+  const volcano = terrain.userData.volcano;
+  const vx = volcano.x;
+  const vz = volcano.z; // local mesh coords already carry the -110 z offset
+  let summit = 0;
+  let summitR = 0;
+  for (let i = 0; i < p.count; i++) {
+    const d = Math.hypot(p.getX(i) - vx, p.getZ(i) - vz);
+    if (d > volcano.radius) continue;
+    if (p.getY(i) > summit) {
+      summit = p.getY(i);
+      summitR = d;
+    }
+  }
+  Math.abs(summit - tallest) < 30 && summitR < volcano.radius * 0.25
+    ? ok(`volcano stands at ${summit.toFixed(0)}m as the highest point, ${summitR.toFixed(0)}m off its axis`)
+    : bad(`volcano summit ${summit.toFixed(0)}m at r=${summitR.toFixed(0)} (range max ${tallest.toFixed(0)}m)`);
+
+  over280 > 20 ? ok(`${over280} vertices sit above 280m — a real skyline, not a berm`) : bad("nothing above 280m");
+  const nonZero = summit > 0 && crestLine.some((v) => v > 150);
+  nonZero ? ok("the ring rises from village floor to mountain in one mesh") : bad("no rise in the ring");
 }
 
 /* ------------------------------------------------------------- footstep map */

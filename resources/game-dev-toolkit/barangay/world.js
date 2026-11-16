@@ -31,6 +31,9 @@ import {
   clothesline,
   bambooFence,
   horizonTerrain,
+  ventanilla,
+  rainGutter,
+  waterDrum,
   mergeStaticGroup,
   makeGlassMaterial,
 } from "./models.js";
@@ -400,6 +403,7 @@ export function buildHouse(opts = {}) {
   const glassMat = makeGlassMaterial();
   const glass = [glassMat];
   const colliders = [];
+  const shutterColor = r() > 0.5 ? "#3c5a46" : "#5b4632";
 
   const wallH = storeys === 2 ? 5.6 : 3.05;
   const floorH = stilted ? 1.1 : 0.35;
@@ -477,6 +481,9 @@ export function buildHouse(opts = {}) {
     ridgeAlong: "z",
     gableMaterial: gableMat,
     ribbed: roof !== "nipa",
+    rafters: true,
+    bargeBoards: true,
+    gableVent: true,
   });
   roofGroup.position.y = floorH + wallH;
   group.add(roofGroup);
@@ -484,11 +491,29 @@ export function buildHouse(opts = {}) {
   /* windows: two on the front, one per side, plus a ventanilla */
   const winY = floorH + wallH * (storeys === 2 ? 0.28 : 0.58);
   const frontCols = width > 7 ? 2 : 1;
+  // The door sits off-centre under the porch, so the front windows get slots
+  // measured from the door rather than mirrored across the middle — otherwise
+  // a shutter and a door jamb end up inside each other.
+  const doorX = -width * 0.26;
+  const frontWindowX = frontCols === 2 ? [width * 0.12, width * 0.34] : [width * 0.1];
   for (let i = 0; i < frontCols; i++) {
-    const w = windowUnit({ width: 1.05, height: 1.15, sill: true, louvres: r() > 0.5, glassMaterial: glassMat });
-    const spread = width * 0.26;
-    w.position.set(frontCols === 1 ? -width * 0.2 : -spread + i * spread * 2, winY, depth / 2 + 0.02);
+    const w = windowUnit({
+      width: 1.05,
+      height: 1.15,
+      sill: true,
+      louvres: r() > 0.5,
+      glassMaterial: glassMat,
+      shutters: r() > 0.35,
+      shutterColor,
+    });
+    const wx = frontWindowX[i];
+    w.position.set(wx, winY, depth / 2 + 0.02);
     group.add(w);
+    // ventanilla band under the window, the old way of moving air through a
+    // house whose walls close at dusk
+    const vent = ventanilla({ width: 1.3, height: 0.32 });
+    vent.position.set(wx, winY - 0.86, depth / 2 + 0.03);
+    group.add(vent);
   }
   for (const side of [-1, 1]) {
     const w = windowUnit({ width: 0.9, height: 1.0, sill: true, glassMaterial: glassMat });
@@ -498,29 +523,45 @@ export function buildHouse(opts = {}) {
   }
   // ventanilla above the door
   const vent = windowUnit({ width: 1.0, height: 0.42, sill: false, glassMaterial: glassMat });
-  vent.position.set(width * 0.2, floorH + wallH * 0.88, depth / 2 + 0.02);
+  vent.position.set(doorX, floorH + wallH * 0.88, depth / 2 + 0.02);
   group.add(vent);
 
   /* door + steps + awning */
   const door = doorUnit({ width: 1.02, height: 2.05, color: "#6b4f33" });
-  door.position.set(width * 0.2, floorH, depth / 2 + 0.03);
+  door.position.set(doorX, floorH, depth / 2 + 0.03);
   group.add(door);
   const doorSteps = stairs({ steps: stilted ? 4 : 2, width: 1.5, rise: 0.2, run: 0.3, material: concMat });
-  doorSteps.position.set(width * 0.2, 0, depth / 2 + (porch ? 1.45 : 0.16));
+  doorSteps.position.set(doorX, 0, depth / 2 + (porch ? 1.45 : 0.16));
   doorSteps.rotation.y = Math.PI;
   group.add(doorSteps);
 
   const awning = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.06, 1.05), roofMat);
-  awning.position.set(width * 0.2, floorH + 2.42, depth / 2 + 0.5);
+  awning.position.set(doorX, floorH + 2.42, depth / 2 + 0.5);
   awning.rotation.x = -0.18;
   awning.castShadow = true;
   group.add(awning);
   const bracketMat = new THREE.MeshStandardMaterial({ map: TEX.wood(1, "#6a5136"), roughness: 0.9 });
   for (const sx of [-1, 1]) {
     const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.75), bracketMat);
-    bracket.position.set(width * 0.2 + sx * 1.1, floorH + 2.2, depth / 2 + 0.3);
+    bracket.position.set(doorX + sx * 1.1, floorH + 2.2, depth / 2 + 0.3);
     bracket.rotation.x = 0.5;
     group.add(bracket);
+  }
+
+  /* eaves gutter, downpipe and the drum that catches the rain */
+  {
+    // on the street side (-x), out past the eave so the run is actually visible
+    const gutterSide = -(width / 2 + 0.72);
+    const pipeRun = depth + 1.1;
+    const drop = floorH + wallH - 1.15;
+    const gutter = rainGutter({ length: pipeRun, drop });
+    gutter.position.set(gutterSide, floorH + wallH - 0.16, 0);
+    gutter.rotation.y = Math.PI / 2;
+    group.add(gutter);
+    // stand the drum under the downpipe: local +x runs to world -z after the turn
+    const drum = waterDrum({ radius: 0.28, height: 0.86 + r() * 0.12 });
+    drum.position.set(gutterSide - 0.02, 0, -(pipeRun / 2 - 0.12));
+    group.add(drum);
   }
 
   /* porch: deck, posts, canopy and balusters */
@@ -587,6 +628,15 @@ export function buildHouse(opts = {}) {
   }
 
   colliders.push({ half: [width / 2 + 0.15, (wallH + rise) / 2 + floorH / 2, depth / 2 + 0.15], pos: [0, (wallH + rise) / 2 + floorH / 2, 0], tag: "house" });
+  // facade layout, kept so the tests can prove the door and windows clear
+  // each other instead of relying on me eyeballing it
+  group.userData.facade = {
+    doorX,
+    doorWidth: 1.02,
+    windowX: frontWindowX,
+    windowHalfSpan: 0.525 + (1.05 * 0.24),
+    wallHalf: width / 2,
+  };
   mergeStaticGroup(group);
   return { group, glass, colliders };
 }
@@ -667,6 +717,8 @@ function buildHall(scene, colliders) {
     overhang: 0.85,
     ridgeAlong: "x",
     gableMaterial: gableMat,
+    bargeBoards: true,
+    rafters: true,
   });
   roofGroup.position.y = floorH + wallH;
   group.add(roofGroup);
@@ -794,8 +846,8 @@ function buildBackdrop(scene) {
   const terrain = horizonTerrain({
     innerRadius: LAYOUT.groundRadius,
     outerRadius: 1000,
-    radialSteps: 46,
-    segments: 168,
+    radialSteps: 56,
+    segments: 184,
     seed: 2024,
   });
   terrain.position.z = -LAYOUT.groundCenterZ;

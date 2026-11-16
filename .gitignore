@@ -5,3 +5,6 @@ node_modules/
 __pycache__/
 *.pyc
 .DS_Store
+
+# renders from tools/preview.mjs are regenerated on demand
+resources/game-dev-toolkit/preview-*.png

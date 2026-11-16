@@ -114,6 +114,59 @@ in `CREDITS.md` and on the in-game About card.
   door is the recorded wooden door.
 - The **radio** stays deliberately synthesised, and says so in its caption.
 
+## Modelling pass (third build)
+
+The village is built from components in `barangay/models.js`, not from boxes and
+cones standing in for things.
+
+**Houses** (`buildHouse` in `world.js`) gained the details that make a provincial
+house read as one:
+
+- **roof**: ribbed corrugated sheets, a ridge cap, **barge boards down each
+  gable rake**, **exposed rafter tails** under the eaves, a **louvred gable vent**
+  at each end, plus the ridge-high/eaves-low geometry the roof test pins down.
+- **openings**: six-light windows with glazing bars, timber **shutters** folded
+  flat against the wall, **ventanilla** slat bands under the front windows, a
+  panelled door with jamb, head, threshold, knob and hinges.
+- **rainwater**: a **galvanised gutter with brackets** along the street eave, a
+  downpipe, and a **ribbed steel drum** standing under it.
+- **porch**: deck, carried posts, canopy with fascia, baluster railings, bench,
+  and steps set outside the deck. Water jar, potted plant, clothesline and bamboo
+  fence finish the yard.
+- façade layout: the door sits off-centre and the front windows have slots
+  measured from it, so a shutter can no longer end up inside a door jamb — the
+  walkthrough test asserts this for all seven houses.
+
+**Mountains** (`horizonTerrain` in `models.js`):
+
+- heights come from **domain-warped ridged noise** (`1-|2n-1|`), which gives
+  sharp crests instead of rounded fbm domes — the test counts separate crests so
+  one smooth lump cannot pass.
+- a **volcanic cone** with a notched crater, a raised rim and radial gullies
+  stands as the landmark, its footprint damping the range noise so the cone is
+  not swallowed by the ridge line.
+- **slope-based vertex colouring**: rock on the crags, forest green on the
+  sheltered mid slopes, silt in the valleys, and an aerial-perspective lerp
+  toward haze with distance, so far crests sit behind near ones.
+
+## Looking at the build without a browser
+
+There is no Chromium or WebGL in this environment, so `tools/preview.mjs`
+rasterises the real scene to PNG in software (z-buffer, near-plane clipping, flat
+shading, vertex colours; no textures, shadows or fog) and hands the result to
+ImageMagick:
+
+```bash
+node tools/preview.mjs house       # preview-house.png
+node tools/preview.mjs street      # preview-street.png
+node tools/preview.mjs hall
+node tools/preview.mjs store
+node tools/preview.mjs mountains
+node tools/preview.mjs all
+```
+
+The PNGs are gitignored — regenerate them whenever the modelling changes.
+
 ## What is actually implemented
 
 - Terrain, dirt road with shoulders, rice paddies with planted rows and bunds, a
@@ -177,6 +230,7 @@ resources/game-dev-toolkit/
     shop.js / tindera-lines.js        inventory, wallet, dialogue
     sound.js                          recorded effects (CC BY 4.0) + synth fallback, radio
   walkthrough-test.mjs                 headless route test (no browser needed)
+  tools/preview.mjs                    software renderer: scene -> PNG, no GPU
   tools/fetch-oculus-audio.mjs        re-downloads the 57 vendored sound effects
   assets/audio/oculus/                57 Ogg recordings, LICENSE (CC BY 4.0), MANIFEST.json
   assets/characters/cc0/              models, animations, catalogs, licences

@@ -31,14 +31,17 @@ export function sharedMaterial(key, factory) {
 
 export function materialSignature(mat) {
   if (!mat) return "none";
+  // Roughness/metalness are quantised: a 0.02 difference between two boards is
+  // invisible but would otherwise split the batch into another draw call.
+  const q = (v) => Math.round(v * 12) / 12;
   return [
     mat.type,
     mat.color?.getHexString?.() ?? "c",
     mat.map?.uuid ?? "nomap",
     mat.emissive?.getHexString?.() ?? "e",
-    (mat.emissiveIntensity ?? 0).toFixed(2),
-    (mat.roughness ?? 1).toFixed(2),
-    (mat.metalness ?? 0).toFixed(2),
+    q(mat.emissiveIntensity ?? 0).toFixed(2),
+    q(mat.roughness ?? 1).toFixed(2),
+    q(mat.metalness ?? 0).toFixed(2),
     mat.side,
     mat.transparent ? 1 : 0,
     (mat.opacity ?? 1).toFixed(2),
@@ -234,6 +237,9 @@ export function gableRoof({
   gableMaterial = null,
   ribbed = true,
   eaves = true,
+  rafters = false,
+  bargeBoards = false,
+  gableVent = false,
 }) {
   const group = new THREE.Group();
   const halfSpan = width / 2 + overhang;
@@ -277,6 +283,38 @@ export function gableRoof({
     group.add(capBoard);
   }
 
+  // exposed rafter tails: the ends of the roof structure, left showing under the
+  // eaves the way they are on an unpainted provincial house
+  if (rafters) {
+    const rafterMat = sharedMaterial(
+      "rafterwood",
+      () => new THREE.MeshStandardMaterial({ map: TEX.wood(1, "#5f4831"), roughness: 0.95 })
+    );
+    const count = Math.max(3, Math.round(ridgeLength / 0.66));
+    for (let i = 0; i < count; i++) {
+      const z = -ridgeLength / 2 + (i + 0.5) * (ridgeLength / count);
+      for (const side of [-1, 1]) {
+        const tail = new THREE.Mesh(new THREE.BoxGeometry(overhang * 1.0, 0.075, 0.055), rafterMat);
+        tail.position.set(side * (halfSpan - overhang * 0.55), -0.3, z);
+        tail.rotation.z = -side * angle;
+        tail.castShadow = true;
+        group.add(tail);
+      }
+    }
+  }
+
+  // verge / barge boards down the rake of each gable, so the sheet edge is capped
+  if (bargeBoards) {
+    for (const z of [-depth / 2 - overhang, depth / 2 + overhang]) {
+      for (const side of [-1, 1]) {
+        const board = new THREE.Mesh(new THREE.BoxGeometry(slopeLength, 0.19, 0.055), material);
+        board.position.set((side * halfSpan) / 2, rise / 2 + 0.04, z);
+        board.rotation.z = -side * angle;
+        group.add(board);
+      }
+    }
+  }
+
   // gable infill
   const shape = new THREE.Shape();
   shape.moveTo(-width / 2, 0);
@@ -293,6 +331,36 @@ export function gableRoof({
     group.add(g);
   }
 
+  // louvred vent in each gable: the triangle of wall above the eaves is
+  // otherwise dead flat, and this is where the hot air leaves the house
+  if (gableVent) {
+    const ventMat = sharedMaterial(
+      "gablevent",
+      () => new THREE.MeshStandardMaterial({ map: TEX.wood(1, "#5b4a38"), roughness: 0.9 })
+    );
+    const darkMat = sharedMaterial(
+      "windowreveal",
+      () => new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.9 })
+    );
+    for (const z of [-depth / 2 - 0.012, depth / 2 + 0.012]) {
+      const facing = z > 0 ? 1 : -1;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.5, 0.03), darkMat);
+      back.position.set(0, rise * 0.42, z);
+      group.add(back);
+      for (let i = 0; i < 6; i++) {
+        const slat = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.055, 0.045), ventMat);
+        slat.position.set(0, rise * 0.42 - 0.21 + i * 0.084, z + facing * 0.025);
+        slat.rotation.x = facing * 0.5;
+        group.add(slat);
+      }
+      for (const y of [rise * 0.42 - 0.27, rise * 0.42 + 0.27]) {
+        const trim = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.06, 0.05), ventMat);
+        trim.position.set(0, y, z + facing * 0.02);
+        group.add(trim);
+      }
+    }
+  }
+
   if (ridgeAlong === "x") group.rotation.y = Math.PI / 2;
   return group;
 }
@@ -307,6 +375,9 @@ export function windowUnit({
   glassOut = null,
   glassMaterial = null,
   frameColor = 0xf0ece0,
+  mullions = true,
+  shutters = false,
+  shutterColor = "#3c5a46",
 }) {
   const g = new THREE.Group();
   const frameMat = sharedMaterial(
@@ -338,6 +409,46 @@ export function windowUnit({
   g.add(rail(width + 0.12, 0.1, 0, height / 2), rail(width + 0.12, 0.1, 0, -height / 2));
   g.add(rail(0.1, height + 0.12, -width / 2, 0), rail(0.1, height + 0.12, width / 2, 0));
   g.add(rail(0.055, height, 0, 0));
+
+  // glazing bars: the cross that turns a pane into the six-light sash you see on
+  // every concrete house in the province
+  if (mullions) {
+    // same paint as the frame, so the bars cost no extra draw call
+    const bar = frameMat;
+    for (const y of [-height * 0.18, height * 0.18]) {
+      const h = new THREE.Mesh(new THREE.BoxGeometry(width * 0.96, 0.03, 0.03), bar);
+      h.position.set(0, y, 0.055);
+      g.add(h);
+    }
+    for (const x of [-width * 0.22, width * 0.22]) {
+      const v = new THREE.Mesh(new THREE.BoxGeometry(0.03, height * 0.94, 0.03), bar);
+      v.position.set(x, 0, 0.055);
+      g.add(v);
+    }
+  }
+
+  // timber shutters, folded flat against the wall on either side of the opening
+  if (shutters) {
+    const leafMat = sharedMaterial(
+      `shutter:${shutterColor}`,
+      () => new THREE.MeshStandardMaterial({ map: TEX.wood(1, shutterColor), roughness: 0.9 })
+    );
+    for (const side of [-1, 1]) {
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(width * 0.46, height * 0.96, 0.045), leafMat);
+      leaf.position.set(side * (width / 2 + width * 0.24), 0, 0.05);
+      leaf.castShadow = true;
+      g.add(leaf);
+      // two stiles and a brace per leaf
+      for (const y of [-height * 0.38, height * 0.38]) {
+        const stile = new THREE.Mesh(new THREE.BoxGeometry(width * 0.42, 0.05, 0.012), leafMat);
+        stile.position.set(side * (width / 2 + width * 0.24), y, 0.078);
+        g.add(stile);
+      }
+      const strap = new THREE.Mesh(new THREE.BoxGeometry(0.03, height * 0.9, 0.012), leafMat);
+      strap.position.set(side * (width / 2 + width * 0.24) + side * width * 0.19, 0, 0.078);
+      g.add(strap);
+    }
+  }
 
   if (sill) {
     const sillMesh = new THREE.Mesh(new THREE.BoxGeometry(width + 0.3, 0.07, 0.24), frameMat);
@@ -427,6 +538,106 @@ export function doorUnit({ width = 1.05, height = 2.1, color = "#6b4f33", glassO
   );
   threshold.position.set(0, 0.03, 0.06);
   g.add(threshold);
+  return g;
+}
+
+/**
+ * Ventanilla — the slatted vent band that sits under a window on old provincial
+ * houses, letting air through while keeping the rain out.
+ */
+export function ventanilla({ width = 1.6, height = 0.34, slats = 7, frameColor = 0xf0ece0 } = {}) {
+  const g = new THREE.Group();
+  const frameMat = sharedMaterial(
+    `ventframe:${frameColor}`,
+    () => new THREE.MeshStandardMaterial({ color: frameColor, roughness: 0.8 })
+  );
+  const slatMat = sharedMaterial(
+    "ventslat",
+    () => new THREE.MeshStandardMaterial({ map: TEX.wood(1, "#6a5136"), roughness: 0.9 })
+  );
+  const back = new THREE.Mesh(
+    new THREE.BoxGeometry(width, height, 0.05),
+    sharedMaterial("windowreveal", () => new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.9 }))
+  );
+  back.position.z = -0.03;
+  g.add(back);
+  for (const y of [-height / 2, height / 2]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(width + 0.1, 0.06, 0.09), frameMat);
+    rail.position.set(0, y, 0.02);
+    g.add(rail);
+  }
+  for (const x of [-width / 2, width / 2]) {
+    const stile = new THREE.Mesh(new THREE.BoxGeometry(0.06, height, 0.09), frameMat);
+    stile.position.set(x, 0, 0.02);
+    g.add(stile);
+  }
+  for (let i = 1; i < slats; i++) {
+    const slat = new THREE.Mesh(new THREE.BoxGeometry(width * 0.97, 0.045, 0.085), slatMat);
+    slat.position.set(0, -height / 2 + (i * height) / slats, 0.015);
+    slat.rotation.x = 0.62;
+    g.add(slat);
+  }
+  return g;
+}
+
+/**
+ * A run of galvanised gutter with brackets, ending in a downpipe. Returns the
+ * group plus the downpipe's local x so a drum can be stood under it.
+ */
+export function rainGutter({ length = 4, drop = 2.6, material = null, endX = null } = {}) {
+  const group = new THREE.Group();
+  const metal = material ??
+    sharedMaterial("guttermtl", () => new THREE.MeshStandardMaterial({ color: 0x9aa19c, roughness: 0.5, metalness: 0.55 }));
+  const trough = new THREE.Mesh(new THREE.BoxGeometry(length, 0.11, 0.13), metal);
+  trough.position.set(0, 0, 0);
+  group.add(trough);
+  // a lip on the outer edge reads as a folded sheet rather than a bar
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(length, 0.03, 0.03), metal);
+  lip.position.set(0, 0.065, 0.065);
+  group.add(lip);
+  const brackets = Math.max(2, Math.round(length / 0.9));
+  for (let i = 0; i < brackets; i++) {
+    const x = -length / 2 + (i + 0.5) * (length / brackets);
+    const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.2), metal);
+    bracket.position.set(x, -0.06, 0);
+    group.add(bracket);
+  }
+  const x = endX ?? length / 2 - 0.12;
+  const elbow = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.16, 10), metal);
+  elbow.position.set(x, -0.12, 0.02);
+  group.add(elbow);
+  const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, drop, 10), metal);
+  pipe.position.set(x, -0.2 - drop / 2, 0.02);
+  group.add(pipe);
+  for (const y of [-0.6, -drop * 0.55]) {
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.04, 0.1), metal);
+    strap.position.set(x, y, 0.02);
+    group.add(strap);
+  }
+  group.userData.downpipe = { x, z: 0.02, bottom: -0.2 - drop };
+  return group;
+}
+
+/** A ribbed steel drum, the rain catchment that stands under every downpipe. */
+export function waterDrum({ radius = 0.29, height = 0.82, color = 0x4c6b7a } = {}) {
+  const g = new THREE.Group();
+  const body = sharedMaterial(
+    `drum:${color}`,
+    () => new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.35 })
+  );
+  const shell = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.96, height, 16), body);
+  shell.position.y = height / 2;
+  shell.castShadow = true;
+  g.add(shell);
+  for (const y of [height * 0.28, height * 0.62]) {
+    const rib = new THREE.Mesh(new THREE.TorusGeometry(radius * 1.01, 0.018, 6, 18), body);
+    rib.rotation.x = Math.PI / 2;
+    rib.position.y = y;
+    g.add(rib);
+  }
+  const lid = new THREE.Mesh(new THREE.CylinderGeometry(radius * 1.02, radius * 1.02, 0.05, 16), body);
+  lid.position.y = height + 0.02;
+  g.add(lid);
   return g;
 }
 
@@ -685,12 +896,15 @@ export function mergeStaticGroup(group) {
 export function horizonTerrain({
   innerRadius = 200,
   outerRadius = 1000,
-  radialSteps = 46,
-  segments = 168,
+  radialSteps = 56,
+  segments = 184,
   seed = 2024,
-  grassColor = 0x5e6b3d,
-  hillColor = 0x4b5738,
-  rockColor = 0x515b57,
+  grassColor = 0x5c6a3c,
+  hillColor = 0x3d4b2c,
+  rockColor = 0x6a6d68,
+  sedimentColor = 0x6d6a4e,
+  hazeColor = 0xa9b8c2,
+  volcano = { x: 150, z: -900, height: 350, radius: 285, crater: 0.13 },
 } = {}) {
   const noise = makeNoise(seed);
   const pos = [];
@@ -699,16 +913,63 @@ export function horizonTerrain({
   const cGrass = new THREE.Color(grassColor);
   const cHill = new THREE.Color(hillColor);
   const cRock = new THREE.Color(rockColor);
+  const cSediment = new THREE.Color(sedimentColor);
+  const cHaze = new THREE.Color(hazeColor);
   const tmp = new THREE.Color();
+  const tmp2 = new THREE.Color();
+
+  /**
+   * Ridged noise: folding fbm through 1-|2n-1| turns rounded hills into sharp
+   * crests, and the domain warp stops the crests reading as parallel ridges.
+   */
+  const crest = (x, z, freq, octaves) => {
+    const wx = x + (noise(x * 0.0019, z * 0.0019) - 0.5) * 190;
+    const wz = z + (noise(z * 0.0019 + 13.7, x * 0.0019 + 5.1) - 0.5) * 190;
+    const n = noise.fbm(wx * freq, wz * freq, octaves);
+    return 1 - Math.abs(2 * n - 1);
+  };
+
+  /** The landmark cone: gullied flanks, a notched summit and a raised rim. */
+  const volcanoAt = (x, z) => {
+    if (!volcano) return 0;
+    const dx = x - volcano.x;
+    const dz = z - volcano.z;
+    const d = Math.hypot(dx, dz);
+    if (d > volcano.radius) return 0;
+    const flank = 1 - d / volcano.radius;
+    const a = Math.atan2(dz, dx) * 5.4;
+    // radial gullies, carved deeper near the base
+    const gullies = (noise.fbm(Math.cos(a) * 3.1 + 7, Math.sin(a) * 3.1 + 2, 3) - 0.5) * 0.13;
+    const cone = volcano.height * Math.pow(flank, 1.42) * (1 + gullies * (1 - flank * 0.4));
+    const craterR = volcano.radius * volcano.crater;
+    const notch = volcano.height * 0.14 * Math.exp(-Math.pow(d / craterR, 2));
+    const rim = volcano.height * 0.045 * Math.exp(-Math.pow((d - craterR * 1.25) / (craterR * 1.4), 2));
+    return Math.max(0, cone - notch + rim);
+  };
+
+  /**
+   * The range noise is damped inside the volcano's footprint, otherwise the
+   * fbm crests eat the cone and the landmark disappears into the ridge line.
+   */
+  const rangeMask = (x, z) => {
+    if (!volcano) return 1;
+    const d = Math.hypot(x - volcano.x, z - volcano.z);
+    const w = 1 - THREE.MathUtils.smoothstep(d, volcano.radius * 0.35, volcano.radius * 1.15);
+    return 1 - 0.95 * w;
+  };
 
   const heightAt = (x, z, r) => {
     const t = THREE.MathUtils.smoothstep(r, innerRadius, innerRadius + 220);
-    const rolling = noise.fbm(x * 0.0042, z * 0.0042, 4) * 46 * t;
-    const ridgeT = THREE.MathUtils.smoothstep(r, 520, 940);
-    const ridges =
-      Math.pow(noise.fbm(x * 0.0016, z * 0.0016, 3), 1.7) * 300 * ridgeT +
-      noise.fbm(x * 0.006, z * 0.006, 2) * 26 * ridgeT;
-    return rolling + ridges;
+    // paddies give way to rolling pasture, then the range proper
+    const rolling = noise.fbm(x * 0.0042, z * 0.0042, 4) * 42 * t;
+    const rangeT = THREE.MathUtils.smoothstep(r, 470, 880);
+    const mask = rangeMask(x, z);
+    const peaks = Math.pow(crest(x, z, 0.00155, 4), 1.75) * 200 * rangeT * mask;
+    const secondLine = Math.pow(crest(x + 260, z - 140, 0.0031, 3), 2.1) * 78 * rangeT * mask;
+    const grain = (noise.fbm(x * 0.0062, z * 0.0062, 3) - 0.5) * 26 * rangeT * (0.3 + 0.7 * mask);
+    // max() rather than sum: the cone has to win where it is taller, and its
+    // base has to disappear into the range instead of sitting in a moat
+    return rolling + Math.max(peaks + secondLine + grain, volcanoAt(x, z));
   };
 
   for (let i = 0; i <= radialSteps; i++) {
@@ -721,9 +982,24 @@ export function horizonTerrain({
       const z = Math.sin(a) * r - 110;
       const y = heightAt(x, z, r);
       pos.push(x, y, z);
-      const h = THREE.MathUtils.clamp(y / 120, 0, 1);
-      tmp.copy(cGrass).lerp(cHill, THREE.MathUtils.smoothstep(y, 2, 55));
-      tmp.lerp(cRock, THREE.MathUtils.smoothstep(h, 0.35, 0.9));
+
+      // --- slope, from finite differences, so crags read as rock and valleys
+      //     as silt rather than every peak getting the same tint
+      const e = 5;
+      const gx = (heightAt(x + e, z, r) - heightAt(x - e, z, r)) / (2 * e);
+      const gz = (heightAt(x, z + e, r) - heightAt(x, z - e, r)) / (2 * e);
+      const slope = Math.hypot(gx, gz);
+      const mottle = noise.fbm(x * 0.018, z * 0.018, 2);
+
+      tmp.copy(cGrass).lerp(cHill, THREE.MathUtils.smoothstep(y, 3, 60));
+      tmp.lerp(cSediment, THREE.MathUtils.smoothstep(mottle, 0.62, 0.9) * 0.35 * (1 - THREE.MathUtils.smoothstep(y, 90, 160)));
+      tmp.lerp(cRock, THREE.MathUtils.smoothstep(slope, 0.5, 1.15));
+      tmp.lerp(cRock, THREE.MathUtils.smoothstep(y, 150, 265) * 0.55);
+      // forest speckle on the sheltered mid slopes: reads as canopy at distance
+      tmp2.copy(cHill).multiplyScalar(0.78);
+      tmp.lerp(tmp2, THREE.MathUtils.smoothstep(mottle, 0.45, 0.8) * (1 - THREE.MathUtils.smoothstep(slope, 0.55, 1)) * 0.5);
+      // aerial perspective, so the far crests sit behind the near ones
+      tmp.lerp(cHaze, THREE.MathUtils.smoothstep(r, 560, 990) * 0.62);
       colors.push(tmp.r, tmp.g, tmp.b);
     }
   }
@@ -745,5 +1021,7 @@ export function horizonTerrain({
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: false });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = false;
+  mesh.name = "horizonTerrain";
+  mesh.userData.volcano = volcano;
   return mesh;
 }
