@@ -915,6 +915,76 @@ export function pottedPlant({ scale = 1, leafCount = 7, potColor = 0xa9603c } = 
 }
 
 /** Clothesline with pegged laundry — reads instantly as a lived-in home. */
+/**
+ * A shrub: a few deformed icosahedra of foliage with blades pushing out of the
+ * top, optionally standing in a concrete planter. Clipped-box "hedges" read as
+ * crates dropped on the lawn — this is what planting has to look like instead.
+ */
+export function shrub({ radius = 0.55, height = 0.85, seed = 5, planter = false, planterMaterial = null } = {}) {
+  const g = new THREE.Group();
+  const r = makeNoise(seed);
+  const leafMat = sharedMaterial("shrub-leaf", () =>
+    new THREE.MeshStandardMaterial({ color: 0x476f35, roughness: 0.95, flatShading: true })
+  );
+  const deepMat = sharedMaterial("shrub-leaf-deep", () =>
+    new THREE.MeshStandardMaterial({ color: 0x33552a, roughness: 0.95, flatShading: true })
+  );
+
+  const blobs = 5;
+  for (let i = 0; i < blobs; i++) {
+    const geo = new THREE.IcosahedronGeometry(radius * (0.52 + r(i, 1) * 0.34), 1);
+    const pos = geo.attributes.position;
+    const v = new THREE.Vector3();
+    for (let k = 0; k < pos.count; k++) {
+      v.fromBufferAttribute(pos, k);
+      v.multiplyScalar(0.84 + r(k * 0.37 + i * 3.1, 9) * 0.34);
+      pos.setXYZ(k, v.x, v.y * 0.82, v.z);
+    }
+    geo.computeVertexNormals();
+    const blob = new THREE.Mesh(geo, i % 2 ? deepMat : leafMat);
+    const a = (i / blobs) * Math.PI * 2 + r(i, 3) * 0.7;
+    const spread = i === 0 ? 0 : radius * 0.46;
+    blob.position.set(
+      Math.cos(a) * spread,
+      height * 0.5 + (r(i, 4) - 0.35) * height * 0.22,
+      Math.sin(a) * spread
+    );
+    blob.rotation.y = a;
+    blob.castShadow = true;
+    blob.receiveShadow = true;
+    g.add(blob);
+  }
+
+  const blades = new THREE.Mesh(
+    bladeClump(
+      9,
+      { length: height * 0.6, width: 0.1, curve: 0.55, rise: 1.15, fold: 0.25, segsL: 4, segsW: 1 },
+      seed + 3
+    ),
+    sharedMaterial("shrub-blades", () =>
+      new THREE.MeshStandardMaterial({ color: 0x577f3a, roughness: 0.9, side: THREE.DoubleSide })
+    )
+  );
+  blades.position.y = height * 0.62;
+  g.add(blades);
+
+  if (planter) {
+    const mat =
+      planterMaterial ??
+      sharedMaterial("planter-concrete", () =>
+        new THREE.MeshStandardMaterial({ map: TEX.concrete(2), color: 0xd6d0c2, roughness: 1 })
+      );
+    const box = new THREE.Mesh(new THREE.BoxGeometry(radius * 2.5, height * 0.42, radius * 2.1), mat);
+    box.position.y = height * 0.21;
+    box.castShadow = true;
+    box.receiveShadow = true;
+    g.add(box);
+    for (const child of g.children) if (child !== box) child.position.y += height * 0.34;
+  }
+
+  return g;
+}
+
 export function clothesline({ length = 3.4, height = 1.8, colors = [0xd8d2c0, 0x9fb4c8, 0xc9a08a] } = {}) {
   const g = new THREE.Group();
   const postMat = new THREE.MeshStandardMaterial({ map: TEX.wood(1, "#6a5136"), roughness: 0.95 });

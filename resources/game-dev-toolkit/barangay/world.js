@@ -29,6 +29,7 @@ import {
   stairs,
   jar,
   pottedPlant,
+  shrub,
   clothesline,
   bambooFence,
   horizonTerrain,
@@ -1040,15 +1041,26 @@ function buildHall(scene, colliders) {
     emissiveIntensity: 0,
   });
   for (const side of [-1, 1]) {
-    const x = side * (bayW / 2 + 0.32);
-    const bracket = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.7, 6), lampMat);
-    bracket.rotation.z = Math.PI / 2;
-    bracket.position.set(x, floorH + 3.1, front + 0.35);
-    group.add(bracket);
-    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), bulbMat);
-    bulb.position.set(x + side * 0.42, floorH + 3.1, front + 0.35);
+    // a wall lantern: back plate on the render, arm out from the wall, shade and
+    // bulb hanging off the end. It used to be a bracket and a bulb floating
+    // 0.35 m off the facade with nothing joining them to it.
+    const x = side * (bayW / 2 + 0.45);
+    const y = floorH + 3.05;
+    const zWall = front + 0.03;
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.32, 0.07), lampMat);
+    plate.position.set(x, y, zWall);
+    group.add(plate);
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.46, 8), lampMat);
+    arm.rotation.x = Math.PI / 2;
+    arm.position.set(x, y, zWall + 0.24);
+    group.add(arm);
+    const shade = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.2, 10), lampMat);
+    shade.position.set(x, y - 0.04, zWall + 0.46);
+    group.add(shade);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), bulbMat);
+    bulb.position.set(x, y - 0.17, zWall + 0.46);
     group.add(bulb);
-    const light = new THREE.PointLight(0xffd08a, 0, 24, 1.8);
+    const light = new THREE.PointLight(0xffd08a, 0, 22, 1.8);
     light.position.copy(bulb.position);
     group.add(light);
     lamps.push({ bulb, light });
@@ -1064,21 +1076,27 @@ function buildHall(scene, colliders) {
   lawn.receiveShadow = true;
   scene.add(lawn);
 
-  // clipped hedges flanking the approach, and pots standing on the lawn at the
-  // foot of the steps — the pots used to be placed at plinth height while
-  // standing on the grass, which left them hanging in mid-air
-  const hedgeMat = new THREE.MeshStandardMaterial({ map: TEX.grass(4), color: 0x6d8a4c, roughness: 1 });
+  // planting either side of the approach: a run of shrubs on the lawn, with a
+  // pot at the foot of the steps. These were clipped boxes on the first pass,
+  // which read as black crates dropped in front of the doors.
   const props = [];
   for (const sx of [-1, 1]) {
-    for (let i = 0; i < 3; i++) {
-      const hedge = add(new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.75, 0.9), hedgeMat));
-      hedge.position.set(sx * (5.8 + i * 0.05), 0.38, stepZ + 1.6 + i * 1.5);
-      props.push({ kind: "hedge", x: sx * (5.8 + i * 0.05), y: 0.005, z: stepZ + 1.6 + i * 1.5 });
+    for (let i = 0; i < 4; i++) {
+      const bush = shrub({
+        radius: 0.5 + (i % 2) * 0.08,
+        height: 0.8 + (i % 3) * 0.06,
+        seed: 31 + i * 7 + (sx > 0 ? 3 : 0),
+      });
+      const x = sx * (5.7 + (i % 2) * 0.25);
+      const z = stepZ + 1.5 + i * 1.15;
+      bush.position.set(x, 0.01, z);
+      group.add(bush);
+      props.push({ kind: "shrub", x, y: 0.01, z });
     }
     const plant = pottedPlant({ scale: 1.35 });
-    plant.position.set(sx * 5.6, 0.02, stepZ + 1.1);
+    plant.position.set(sx * 4.5, 0.02, stepZ + 1.1);
     group.add(plant);
-    props.push({ kind: "pot", x: sx * 5.6, y: 0.02, z: stepZ + 1.1 });
+    props.push({ kind: "pot", x: sx * 4.5, y: 0.02, z: stepZ + 1.1 });
   }
 
   mergeStaticGroup(group);
