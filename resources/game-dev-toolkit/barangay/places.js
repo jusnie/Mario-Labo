@@ -8,7 +8,7 @@
  */
 import * as THREE from "three";
 import { buildHouse, gableRoof, placeColliders } from "./world.js";
-import { jar, pottedPlant, mergeStaticGroup } from "./models.js";
+import { jar, pottedPlant, mergeStaticGroup, gardenBed, sharedMaterial } from "./models.js";
 import * as TEX from "./textures.js";
 
 /* ------------------------------------------------------------------- store */
@@ -78,23 +78,79 @@ export async function createStore(scene, colliders, characters) {
     0xd94f3d, 0xf0c419, 0x3f8fd0, 0x59a14f, 0xe07b39, 0xc45fa0, 0x8c6d31, 0x4e79a7, 0xe15759, 0x76b7b2,
     0xf28e2b, 0x59a14f, 0xedc948, 0xb07aa1,
   ];
-  const productGeo = new THREE.BoxGeometry(0.14, 0.2, 0.1);
+  // stock on the shelves: tins, bottles and sachet packs rather than sixteen
+  // identical boxes in sixteen colours
+  const goodsMat = (hex, key = "") =>
+    sharedMaterial(`goods:${key}${hex.toString(16)}`, () =>
+      new THREE.MeshStandardMaterial({ color: hex, roughness: 0.62 })
+    );
+  const tin = (hex) => {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.11, 12), goodsMat(0xc2c6c9, "tin"));
+    body.position.y = 0.055;
+    const label = new THREE.Mesh(new THREE.CylinderGeometry(0.054, 0.054, 0.072, 12), goodsMat(hex));
+    label.position.y = 0.055;
+    g.add(body, label);
+    return g;
+  };
+  const bottle = (hex) => {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.048, 0.17, 10), goodsMat(hex));
+    body.position.y = 0.085;
+    const shoulder = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.045, 0.05, 10), goodsMat(hex));
+    shoulder.position.y = 0.195;
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.018, 0.06, 8), goodsMat(hex));
+    neck.position.y = 0.245;
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.019, 0.02, 8), goodsMat(0xf2f0e8, "cap"));
+    cap.position.y = 0.285;
+    g.add(body, shoulder, neck, cap);
+    return g;
+  };
+  const sachetPack = (hex) => {
+    const g = new THREE.Group();
+    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.19, 0.035), goodsMat(hex));
+    pack.position.y = 0.095;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.132, 0.035, 0.037), goodsMat(0xf7f3e6, "band"));
+    band.position.y = 0.13;
+    g.add(pack, band);
+    return g;
+  };
+
   let productIdx = 0;
   for (let shelf = 0; shelf < 3; shelf++) {
     const y = 1.35 + shelf * 0.62;
     const plank = new THREE.Mesh(new THREE.BoxGeometry(W - 1.9, 0.06, 0.42), shelfMat);
     plank.position.set(0, y, -D / 2 + 0.5);
     group.add(plank);
-    for (let i = 0; i < 16; i++) {
-      const mat = new THREE.MeshStandardMaterial({
-        color: productColors[productIdx++ % productColors.length],
-        roughness: 0.7,
-      });
-      const box = new THREE.Mesh(productGeo, mat);
-      box.position.set(-W / 2 + 1.0 + i * ((W - 2.0) / 15) + (Math.random() - 0.5) * 0.02, y + 0.13, -D / 2 + 0.5);
-      box.rotation.y = (Math.random() - 0.5) * 0.2;
-      group.add(box);
+    for (let i = 0; i < 15; i++) {
+      const hex = productColors[productIdx++ % productColors.length];
+      const roll = (i * 7 + shelf * 3) % 10; // deterministic, so runs repeat
+      const item = roll < 4 ? tin(hex) : roll < 7 ? bottle(hex) : sachetPack(hex);
+      item.position.set(
+        -W / 2 + 1.1 + i * ((W - 2.2) / 14) + ((i * 13) % 5) * 0.004,
+        y + 0.04,
+        -D / 2 + 0.5
+      );
+      item.rotation.y = (((i * 11) % 7) - 3) * 0.06;
+      group.add(item);
     }
+  }
+
+  // rice sacks and a bayong at the foot of the counter
+  for (const [sx, sz, rot] of [[-2.1, 0.5, 0.2], [-1.75, 0.15, -0.35]]) {
+    const sack = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42, 0.3, 0.32),
+      sharedMaterial("goods:sack", () => new THREE.MeshStandardMaterial({ color: 0xe3d9bd, roughness: 1 }))
+    );
+    sack.position.set(sx, 0.46, D / 2 - 1.15 + sz);
+    sack.rotation.y = rot;
+    group.add(sack);
+    const tie = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.06, 0.06, 8),
+      sharedMaterial("goods:sacktie", () => new THREE.MeshStandardMaterial({ color: 0xc9bda0, roughness: 1 }))
+    );
+    tie.position.set(sx, 0.62, D / 2 - 1.15 + sz);
+    group.add(tie);
   }
 
   /* hanging sachets along the counter (the classic sari-sari curtain) */
@@ -159,9 +215,22 @@ export async function createStore(scene, colliders, characters) {
   table.position.set(-0.75, 0.72, -1.45);
   backRoom.add(table);
   for (const dx of [-0.5, 0.5]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.72, 0.08), tableMat);
-    leg.position.set(-0.75 + dx, 0.36, -1.45);
-    backRoom.add(leg);
+    for (const dz of [-0.26, 0.26]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.72, 0.08), tableMat);
+      leg.position.set(-0.75 + dx, 0.36, -1.45 + dz);
+      backRoom.add(leg);
+    }
+  }
+  // apron rails, so the kusina table is a table and not a plank on two sticks
+  for (const dz of [-0.26, 0.26]) {
+    const apron = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.07, 0.04), tableMat);
+    apron.position.set(-0.75, 0.63, -1.45 + dz);
+    backRoom.add(apron);
+  }
+  for (const dx of [-0.5, 0.5]) {
+    const apron = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.07, 0.5), tableMat);
+    apron.position.set(-0.75 + dx, 0.63, -1.45);
+    backRoom.add(apron);
   }
   const kaldero = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.16, 0.26, 12), new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.55, metalness: 0.55 }));
   kaldero.position.set(-0.75, 0.9, -1.45);
@@ -296,22 +365,12 @@ export function createErniesHouse(scene, colliders) {
 
   colliders.push(...placeColliders(localColliders, group, "ernie-house"));
 
-  /* garden bed of pechay / talong seedlings in front */
-  const soilMat = new THREE.MeshStandardMaterial({ map: TEX.mud(), color: 0x6a5540, roughness: 1 });
-  const plantMat = new THREE.MeshStandardMaterial({ color: 0x5f8a3a, roughness: 0.9, side: THREE.DoubleSide });
+  /* garden bed in front: ridged soil with pechay and talong set out in rows */
   const garden = new THREE.Group();
   garden.position.set(0, 0, 5.6);
-  const bed = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.16, 2.2), soilMat);
-  bed.position.y = 0.08;
-  bed.receiveShadow = true;
-  garden.add(bed);
-  for (let i = 0; i < 34; i++) {
-    const leaf = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.34), plantMat);
-    leaf.position.set(-2.5 + (i % 8) * 0.7 + Math.random() * 0.2, 0.3, -0.8 + Math.floor(i / 8) * 0.7);
-    leaf.rotation.x = -0.5 - Math.random() * 0.4;
-    leaf.rotation.z = Math.random() * 0.6 - 0.3;
-    garden.add(leaf);
-  }
+  garden.add(gardenBed({ width: 5.6, depth: 2.2, ridges: 4, seed: 11, crop: "pechay", crop2: "talong" }));
+  // the planting is ~100 little meshes; bake it down to one mesh per material
+  mergeStaticGroup(garden);
   group.add(garden);
 
   /* porch bulb that is on at night */
@@ -331,38 +390,121 @@ export function createErniesHouse(scene, colliders) {
 }
 
 /* ------------------------------------------------------- street furniture */
+/**
+ * The road's power line: creosoted poles with two crossarms, pin insulators,
+ * a distribution transformer every third pole, a street lamp every fourth, and
+ * sagging conductors that actually land on the insulators. The first pass was a
+ * bare cylinder with one box arm and two wires floating beside it.
+ */
 export function buildStreetFurniture(scene, colliders) {
-  const poleMat = new THREE.MeshStandardMaterial({ color: 0x8b8377, roughness: 0.9 });
-  const armMat = new THREE.MeshStandardMaterial({ color: 0x6f6a60, roughness: 0.9 });
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x6f6a5e, roughness: 0.95 });
+  const armMat = new THREE.MeshStandardMaterial({ color: 0x7d7668, roughness: 0.95 });
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0x8d9094, roughness: 0.5, metalness: 0.55 });
+  const ceramicMat = new THREE.MeshStandardMaterial({ color: 0xdad6cc, roughness: 0.35 });
   const wireMat = new THREE.LineBasicMaterial({ color: 0x1b1b1b, transparent: true, opacity: 0.55 });
+
+  const CIRCUITS = [
+    { dx: -0.58, y: 6.74 },
+    { dx: 0.58, y: 6.74 },
+    { dx: -0.34, y: 6.18 },
+    { dx: 0.34, y: 6.18 },
+  ];
+
+  const street = new THREE.Group();
   const poles = [];
-  for (let z = 40; z >= -270; z -= 34) {
+  const lampMats = [];
+  let index = 0;
+  for (let z = 40; z >= -270; z -= 34, index++) {
     const pole = new THREE.Group();
     pole.position.set(4.6, 0, z);
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.16, 7.2, 8), poleMat);
-    shaft.position.y = 3.6;
+
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.17, 7.4, 10), poleMat);
+    shaft.position.y = 3.7;
     shaft.castShadow = true;
     pole.add(shaft);
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 0.08), armMat);
-    arm.position.set(-0.7, 6.7, 0);
-    pole.add(arm);
-    scene.add(pole);
+
+    for (const [armY, armLen] of [[6.74, 1.7], [6.18, 1.2]]) {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(armLen, 0.09, 0.1), armMat);
+      arm.position.set(0, armY, 0);
+      arm.castShadow = true;
+      pole.add(arm);
+      // brace back to the pole
+      const brace = new THREE.Mesh(new THREE.BoxGeometry(0.05, armLen * 0.55, 0.05), armMat);
+      brace.position.set(0, armY - armLen * 0.19, 0.05);
+      brace.rotation.z = Math.PI / 2;
+      pole.add(brace);
+    }
+
+    // pin insulators where the conductors sit
+    for (const c of CIRCUITS) {
+      const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.09, 6), metalMat);
+      pin.position.set(c.dx, c.y + 0.09, 0);
+      pole.add(pin);
+      const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.075, 10), ceramicMat);
+      bell.position.set(c.dx, c.y + 0.16, 0);
+      pole.add(bell);
+    }
+
+    // distribution transformer, hung off every third pole
+    if (index % 3 === 1) {
+      const can = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.72, 14), metalMat);
+      can.position.set(0.42, 5.1, 0);
+      can.castShadow = true;
+      pole.add(can);
+      for (const y of [4.85, 5.4]) {
+        const strap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.06), metalMat);
+        strap.position.set(0.2, y, 0);
+        pole.add(strap);
+      }
+      const bushing = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.14, 8), ceramicMat);
+      bushing.position.set(0.42, 5.53, 0);
+      pole.add(bushing);
+    }
+
+    // a street lamp on every fourth pole, reaching over the road
+    let lampBulb = null;
+    if (index % 4 === 2) {
+      const reach = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.5, 8), metalMat);
+      reach.rotation.z = Math.PI / 2;
+      reach.position.set(-0.75, 5.7, 0);
+      pole.add(reach);
+      const shade = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.15, 10), metalMat);
+      shade.position.set(-1.48, 5.64, 0);
+      pole.add(shade);
+      const lampMat = new THREE.MeshStandardMaterial({
+        color: 0xfff3cf,
+        emissive: new THREE.Color(0xffd9a0),
+        emissiveIntensity: 0,
+      });
+      lampMats.push(lampMat);
+      lampBulb = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), lampMat);
+      lampBulb.position.set(-1.48, 5.52, 0);
+      pole.add(lampBulb);
+    }
+
+    street.add(pole);
     poles.push(pole);
-    colliders.push({ half: [0.18, 3.6, 0.18], pos: [4.6, 3.6, z], tag: "post" });
+    colliders.push({ half: [0.18, 3.7, 0.18], pos: [4.6, 3.7, z], tag: "post" });
   }
-  // sagging wires between poles
+
+  // one draw call per material for the whole line
+  mergeStaticGroup(street);
+  scene.add(street);
+
+  // sagging conductors, one per circuit, pole to pole
   for (let i = 0; i < poles.length - 1; i++) {
     const a = poles[i].position;
     const b = poles[i + 1].position;
-    for (const yOff of [6.6, 6.25]) {
+    for (const c of CIRCUITS) {
       const points = [];
-      for (let t = 0; t <= 10; t++) {
-        const p = t / 10;
-        const sag = Math.sin(Math.PI * p) * 0.55;
-        points.push(new THREE.Vector3(4.6 - 1.2 + (b.x - a.x) * 0, yOff - sag, a.z + (b.z - a.z) * p));
+      for (let t = 0; t <= 12; t++) {
+        const p = t / 12;
+        const sag = Math.sin(Math.PI * p) * 0.5;
+        points.push(new THREE.Vector3(4.6 + c.dx, c.y + 0.2 - sag, a.z + (b.z - a.z) * p));
       }
-      const geo = new THREE.BufferGeometry().setFromPoints(points);
-      scene.add(new THREE.Line(geo, wireMat));
+      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), wireMat));
     }
   }
+
+  return { group: street, lampMats };
 }

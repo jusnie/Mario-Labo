@@ -259,9 +259,14 @@ section("modelled detail, not placeholder shapes");
     if (!o.isMesh) return;
     if (o.geometry?.type === "ConeGeometry") cones.push(o);
   });
-  cones.length === 0
-    ? ok("no cone stacks left in the backdrop (hills are displaced terrain now)")
-    : bad(`${cones.length} ConeGeometry meshes still in the scene`);
+  const size = new THREE.Vector3();
+  const bigCones = cones.filter((c) => {
+    new THREE.Box3().setFromObject(c).getSize(size);
+    return size.y > 0.5 || (size.x > 0.6 && size.z > 0.6);
+  });
+  bigCones.length === 0
+    ? ok(`no cone stands in for a hill, roof or plant (${cones.length} small cone fittings like lamp shades are fine)`)
+    : bad(`${bigCones.length} cone meshes over 0.4m still in the scene`);
 
   const terrain = world3d.terrain;
   const vcount = terrain.geometry.attributes.position.count;

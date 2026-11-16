@@ -42,6 +42,7 @@ globalThis.document = { createElement: () => ({ width: 512, height: 512, getCont
 
 const THREE = await import("three");
 const { buildWorld, buildHouse, buildHall, LAYOUT } = await import("../barangay/world.js");
+const { gardenBed } = await import("../barangay/models.js");
 const { createStore } = await import("../barangay/places.js");
 
 const W = 1100;
@@ -273,6 +274,13 @@ if (which === "porchfront" || which === "all") {
   );
 }
 
+if (which === "garden" || which === "all") {
+  const scene = new THREE.Scene();
+  ground(scene);
+  scene.add(gardenBed({ width: 5.6, depth: 2.2, ridges: 4, seed: 11, crop: "pechay", crop2: "talong" }));
+  render(scene, cameraAt({ x: 3.1, y: 1.35, z: 3.0 }, { x: -0.2, y: 0.25, z: 0.1 }, 48), "preview-garden.png");
+}
+
 if (which === "street" || which === "all") {
   const scene = new THREE.Scene();
   const world = buildWorld(scene, { startHour: 15 });
@@ -340,7 +348,7 @@ if (which === "store" || which === "all") {
   const scene = new THREE.Scene();
   const world = buildWorld(scene, { startHour: 15 });
   await createStore(scene, world.colliders, null);
-  render(scene, cameraAt({ x: 4.5, y: 2.4, z: 1.5 }, { x: 10.5, y: 1.6, z: -6 }), "preview-store.png");
+  render(scene, cameraAt({ x: 4.2, y: 1.75, z: -1.2 }, { x: 10.4, y: 1.55, z: -6.0 }, 46), "preview-store.png");
   void world;
 }
 

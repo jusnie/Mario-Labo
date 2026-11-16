@@ -83,7 +83,7 @@ async function boot() {
 
   progress(42, "Itinatayo ang Barangay Kabudoy…");
   const world3d = buildWorld(scene, { startHour: 17.5 });
-  buildStreetFurniture(scene, world3d.colliders);
+  const street = buildStreetFurniture(scene, world3d.colliders);
 
   progress(64, "Nilalagay ang sari-sari store at bahay…");
   const store = await createStore(scene, world3d.colliders, characters);
@@ -518,6 +518,7 @@ async function boot() {
     audio.setDaylight(world3d.clock.daylight);
     audio.setBirds(world3d.clock.daylight > 0.55);
     house.bulbMat.emissiveIntensity = (1 - world3d.clock.daylight) * 1.5;
+    for (const mat of street.lampMats) mat.emissiveIntensity = (1 - world3d.clock.daylight) * 1.6;
     house.porchLight.intensity = (1 - world3d.clock.daylight) * 7;
 
     // --- HUD

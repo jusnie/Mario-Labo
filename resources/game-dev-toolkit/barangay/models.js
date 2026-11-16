@@ -920,6 +920,108 @@ export function pottedPlant({ scale = 1, leafCount = 7, potColor = 0xa9603c } = 
  * top, optionally standing in a concrete planter. Clipped-box "hedges" read as
  * crates dropped on the lawn — this is what planting has to look like instead.
  */
+/**
+ * One leafy crop plant: pechay is a rosette of blade leaves, talong is a stem
+ * with broad leaves and a hanging purple fruit. Flat planes spun at random were
+ * what stood in for these before.
+ */
+export function cropPlant({ kind = "pechay", scale = 1, seed = 3 } = {}) {
+  const g = new THREE.Group();
+  const r = makeNoise(seed);
+  if (kind === "talong") {
+    const stem = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.012 * scale, 0.02 * scale, 0.5 * scale, 6),
+      sharedMaterial("crop-stem", () => new THREE.MeshStandardMaterial({ color: 0x4c6b33, roughness: 0.95 }))
+    );
+    stem.position.y = 0.25 * scale;
+    g.add(stem);
+    const leaves = new THREE.Mesh(
+      bladeClump(7, { length: 0.34 * scale, width: 0.2 * scale, curve: 0.5, rise: 0.95, fold: 0.4, segsL: 4, segsW: 2 }, seed),
+      sharedMaterial("crop-leaf", () =>
+        new THREE.MeshStandardMaterial({ color: 0x4f7a34, roughness: 0.9, side: THREE.DoubleSide })
+      )
+    );
+    leaves.position.y = 0.34 * scale;
+    g.add(leaves);
+    const fruit = new THREE.Mesh(
+      new THREE.SphereGeometry(0.075 * scale, 10, 8),
+      sharedMaterial("crop-talong", () => new THREE.MeshStandardMaterial({ color: 0x5b3d78, roughness: 0.45 }))
+    );
+    fruit.scale.set(0.8, 1.5, 0.8);
+    fruit.position.set(0.1 * scale, 0.2 * scale, 0.05 * scale);
+    fruit.castShadow = true;
+    g.add(fruit);
+    const calyx = new THREE.Mesh(
+      new THREE.ConeGeometry(0.05 * scale, 0.07 * scale, 7),
+      sharedMaterial("crop-calyx", () => new THREE.MeshStandardMaterial({ color: 0x3f6a2f, roughness: 0.9 }))
+    );
+    calyx.position.set(0.1 * scale, 0.31 * scale, 0.05 * scale);
+    g.add(calyx);
+    return g;
+  }
+
+  // pechay: blades fanning up out of the soil, outer ones drooping
+  const outer = new THREE.Mesh(
+    bladeClump(6, { length: 0.3 * scale, width: 0.17 * scale, curve: 0.85, rise: 0.8, fold: 0.35, segsL: 4, segsW: 2 }, seed),
+    sharedMaterial("crop-leaf", () =>
+      new THREE.MeshStandardMaterial({ color: 0x4f7a34, roughness: 0.9, side: THREE.DoubleSide })
+    )
+  );
+  g.add(outer);
+  const heart = new THREE.Mesh(
+    bladeClump(4, { length: 0.2 * scale, width: 0.12 * scale, curve: 0.35, rise: 1.1, fold: 0.25, segsL: 3, segsW: 1 }, seed + 17),
+    sharedMaterial("crop-leaf-pale", () =>
+      new THREE.MeshStandardMaterial({ color: 0x7aa04a, roughness: 0.9, side: THREE.DoubleSide })
+    )
+  );
+  heart.position.y = 0.04 * scale;
+  g.add(heart);
+  void r;
+  return g;
+}
+
+/**
+ * A planted bed: soil raised in ridges with furrows between them and the crop
+ * set out in rows, the way a barangay garden actually looks.
+ */
+export function gardenBed({ width = 5.6, depth = 2.2, ridges = 4, seed = 11, crop = "pechay", crop2 = null } = {}) {
+  const g = new THREE.Group();
+  const r = makeNoise(seed);
+  const soilMat = sharedMaterial("garden-soil", () =>
+    new THREE.MeshStandardMaterial({ map: TEX.mud(), color: 0x6a5540, roughness: 1 })
+  );
+
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(width, 0.18, depth), soilMat);
+  bed.position.y = 0.09;
+  bed.receiveShadow = true;
+  bed.castShadow = true;
+  g.add(bed);
+
+  const ridgeDepth = depth / ridges;
+  for (let i = 0; i < ridges; i++) {
+    const z = -depth / 2 + ridgeDepth * (i + 0.5);
+    const ridge = new THREE.Mesh(new THREE.BoxGeometry(width - 0.18, 0.12, ridgeDepth - 0.18), soilMat);
+    ridge.position.set(0, 0.24, z);
+    ridge.receiveShadow = true;
+    g.add(ridge);
+
+    const kind = crop2 && i % 2 === 1 ? crop2 : crop;
+    const count = Math.max(2, Math.round((width - 0.8) / 0.45));
+    for (let k = 0; k < count; k++) {
+      const x = -(width - 0.8) / 2 + (k * (width - 0.8)) / (count - 1);
+      const plant = cropPlant({
+        kind,
+        scale: 0.85 + r(k * 1.7, i * 2.3) * 0.4,
+        seed: seed + i * 13 + k * 5,
+      });
+      plant.position.set(x + (r(k, i) - 0.5) * 0.08, 0.28, z + (r(k, i + 9) - 0.5) * ridgeDepth * 0.25);
+      plant.rotation.y = r(k, i + 4) * 6.28;
+      g.add(plant);
+    }
+  }
+  return g;
+}
+
 export function shrub({ radius = 0.55, height = 0.85, seed = 5, planter = false, planterMaterial = null } = {}) {
   const g = new THREE.Group();
   const r = makeNoise(seed);
