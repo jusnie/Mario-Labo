@@ -17,6 +17,7 @@ import { CharacterLibrary } from "./characters.js";
 import { AudioEngine } from "./sound.js";
 import { PRODUCTS, Wallet } from "./shop.js";
 import { LINES, TINDERA_NAME, timeGreeting } from "./tindera-lines.js";
+import { createMenu, loadSettings } from "./menu.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -35,7 +36,11 @@ const app = {
   footToggle: 0,
   focusAnim: null,
   nearest: null,
+  menuOpen: true, // nothing moves until the menu hands the mouse over
 };
+
+/* Settings live in localStorage and are applied to the systems that use them. */
+const settings = loadSettings();
 
 const EYE = 0.62; // above the capsule centre => ~1.32m eye height
 
@@ -164,12 +169,20 @@ async function boot() {
   window.addEventListener("keydown", (e) => {
     if (e.repeat) return;
     const k = e.key.toLowerCase();
+    if (app.menuOpen) {
+      // the menu owns the keyboard while it is up; nothing leaks into the world
+      if (k !== "escape") return;
+      if (app.focused) closeStore();
+      else if (app.sitting) toggleSit();
+      return;
+    }
     keys.add(k);
     if (k === "f") toggleFlashlight();
     if (k === "e") interact();
     if (k === "escape") {
       if (app.focused) closeStore();
       else if (app.sitting) toggleSit();
+      else openMenu("pause");
     }
     if (k === "g") jumpToHall();
   });
@@ -201,13 +214,15 @@ async function boot() {
 
   document.addEventListener("mousemove", (e) => {
     if (document.pointerLockElement === canvas) {
-      app.yaw -= e.movementX * 0.0022;
-      app.pitch = THREE.MathUtils.clamp(app.pitch - e.movementY * 0.0022, -1.3, 1.3);
+      const look = 0.0022 * settings.sensitivity;
+      app.yaw -= e.movementX * look;
+      app.pitch = THREE.MathUtils.clamp(app.pitch - e.movementY * look, -1.3, 1.3);
       return;
     }
-    if (!drag.active || app.focused) return;
-    app.yaw -= (e.clientX - drag.x) * 0.0034;
-    app.pitch = THREE.MathUtils.clamp(app.pitch - (e.clientY - drag.y) * 0.0034, -1.3, 1.3);
+    if (!drag.active || app.focused || app.menuOpen) return;
+    const look = 0.0034 * settings.sensitivity;
+    app.yaw -= (e.clientX - drag.x) * look;
+    app.pitch = THREE.MathUtils.clamp(app.pitch - (e.clientY - drag.y) * look, -1.3, 1.3);
     drag.x = e.clientX;
     drag.y = e.clientY;
   });
@@ -295,9 +310,56 @@ async function boot() {
     $("setTime").value = `${String(Math.floor(h)).padStart(2, "0")}:00`;
   }
 
+  /* ------------------------------------------------------------------ menu */
+  let menu = null;
+  function openMenu(mode = "home") {
+    keys.clear();
+    try {
+      document.exitPointerLock?.();
+    } catch {
+      /* no lock to release */
+    }
+    menu?.open(mode);
+  }
+
+  menu = createMenu({
+    settings,
+    onOpenChange: (open) => {
+      app.menuOpen = open;
+      if (open) keys.clear();
+    },
+    onPlay: async () => {
+      app.menuOpen = false;
+      // ask for the pointer lock *before* any await: browsers only grant it
+      // while the click that caused it still counts as a user gesture
+      try {
+        const lock = canvas.requestPointerLock?.();
+        lock?.catch?.(() => {});
+      } catch {
+        /* iframes refuse the lock; dragging the canvas still looks around */
+      }
+      await audio.start();
+      audio.setVolume(settings.volume);
+    },
+    onQuit: () => window.location.reload(),
+    onChange: (next) => {
+      audio.setVolume(next.volume);
+      if (!next.subtitles) $("subtitle").classList.remove("on");
+    },
+    onTime: (h) => setHour(h),
+  });
+
+  // pressing Esc in a browser releases the pointer lock, which is exactly the
+  // moment to stop the world and show the menu
+  document.addEventListener("pointerlockchange", () => {
+    if (document.pointerLockElement === canvas) return;
+    if (app.ready && !app.focused && !app.menuOpen) openMenu("pause");
+  });
+
   /* ------------------------------------------------------------- subtitle */
   let subtitleTimer = null;
   function showSubtitle(line, ms = 5200) {
+    if (!settings.subtitles) return;
     $("subtitleFil").textContent = line.fil;
     $("subtitleEn").textContent = line.en ?? "";
     $("subtitle").classList.add("on");
@@ -468,7 +530,7 @@ async function boot() {
     const dt = Math.min(clock.getDelta(), 0.05);
 
     const frozen = app.focused === "store";
-    const canMove = !frozen && !app.sitting;
+    const canMove = !frozen && !app.sitting && !app.menuOpen;
 
     // --- movement intent
     let ix = 0;
@@ -534,7 +596,7 @@ async function boot() {
     }
 
     // --- world + characters
-    world3d.update(dt, camera.position);
+    world3d.update(app.menuOpen ? 0 : dt, camera.position);
     renderer.toneMappingExposure = world3d.exposure ?? 1.05;
     store.update(dt);
     maria?.update(dt, camera.position);
@@ -599,10 +661,11 @@ async function boot() {
 
   /* ------------------------------------------------------------- start gate */
   $("enter").addEventListener("click", async () => {
+    audio.setVolume(settings.volume); // before start(), so the master gain is born right
     await audio.start();
     $("loading").classList.add("hidden");
     showCaption("Tunog: bukas");
-    canvas.requestPointerLock?.();
+    openMenu("home");
   });
 
   window.addEventListener("resize", () => {

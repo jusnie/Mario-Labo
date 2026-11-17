@@ -27,6 +27,7 @@ browser bundles are vendored in `vendor/` (see below).
 npm ci
 npm run verify        # the stack: three, Rapier WASM, GLBs, clips, licences, bundles
 npm run walkthrough   # builds the real scene and walks Ernie to the hall on foot
+npm run menu          # opens the front end against a stub DOM: nav, settings, Esc
 ```
 
 `verify-stack.mjs` checks three.js, a real Rapier WASM world (capsule falls,
@@ -382,6 +383,15 @@ reads as a diorama:
   breathing clips), Filipino subtitles with an English gloss, a 14-item shop,
   ₱50 to start, a no-credit response when the money is short, and a camera that
   glides to her and back without losing your position or flashlight state.
+- **A front end**: `Pumasok` from the loading screen opens a home screen —
+  **Laro / Play**, **Mga Setting / Settings**, **Tungkol / About**. Play hands the
+  mouse over and starts the audio; `Esc` (or the browser dropping the pointer
+  lock) brings up the same screen as a pause menu with **Ituloy / Resume** and
+  **Bumalik sa simula / Back to the start**. Settings are real: look speed,
+  master volume and subtitles persist in `localStorage` and are clamped on the
+  way in, and the three times of day set the clock. Arrow keys move between
+  entries, `Enter` activates, `Esc` backs out. The world holds still while the
+  menu is up — the clock stops with it.
 - **Maria Labo**, standing in the weeds off the left shoulder 41 m down the road
   from where Ernie starts. The CC0 rig gives her a body; the parts that make her
   *her* are built on top of it — a skirt that hangs from the pelvis bone to her
@@ -428,12 +438,14 @@ resources/game-dev-toolkit/
     places.js                         store, bench, tindera, Ernie's house, Maria, posts
     models.js                         component library: roofs, windows, doors, props, terrain
     characters.js                     CC0 body/garment factory, morphs, clips, Maria's pieces
+    menu.js                           home / settings / about, and the settings store
     surfaces.js                       which footstep surface is underfoot
     textures.js                       procedural canvas surfaces
     physics.js                        Rapier world + shared character step
     shop.js / tindera-lines.js        inventory, wallet, dialogue
     sound.js                          recorded effects (CC BY 4.0) + synth fallback, radio
   walkthrough-test.mjs                 headless route test (no browser needed)
+  menu-test.mjs                        drives the front end against a stub DOM
   tools/preview.mjs                    software renderer: scene -> PNG, no GPU
   tools/char-preview.mjs               software renderer: skinned character -> PNG
   tools/dumptex.mjs                    one procedural texture -> PNG, for inspection

@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "python3 barangay/serve.py",
     "verify": "node verify-stack.mjs",
+    "menu": "node menu-test.mjs",
     "walkthrough": "node walkthrough-test.mjs"
   },
   "dependencies": {

@@ -115,10 +115,18 @@ export class AudioEngine {
     this.sampleFailures = [];
     this.recordedAmbience = false;
     this.synthDuck = 1;
+    this.volume = 0.85;
   }
 
   onCaption(fn) {
     this.captionHandler = fn;
+  }
+
+  /** Master volume, 0..1. Safe to call before start(): it is remembered. */
+  setVolume(v) {
+    this.volume = Math.min(1, Math.max(0, Number.isFinite(v) ? v : this.volume));
+    if (this.master) this.master.gain.value = this.volume;
+    return this.volume;
   }
 
   caption(text) {
@@ -137,7 +145,7 @@ export class AudioEngine {
     }
     this.ctx = new Ctx();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.85;
+    this.master.gain.value = this.volume;
     this.master.connect(this.ctx.destination);
     this.noiseBuffer = this.makeNoise(2.5);
     this.buildSynthAmbience();

@@ -164,6 +164,113 @@
       }
       #shopClose:hover { border-color: var(--accent); color: var(--accent); }
 
+      /* ----------------------------------------------------------------- menu */
+      #menu {
+        position: fixed; inset: 0; z-index: 55;
+        display: flex; align-items: center; justify-content: center;
+        padding: 2rem;
+        background:
+          radial-gradient(circle at 50% 34%, rgba(23, 30, 40, 0.86) 0%, rgba(5, 7, 10, 0.97) 62%),
+          linear-gradient(180deg, rgba(143, 43, 43, 0.07), transparent 40%);
+        opacity: 0; pointer-events: none;
+        transition: opacity 0.45s ease;
+      }
+      #menu.on { opacity: 1; pointer-events: auto; }
+      #menu .menu-grain {
+        position: absolute; inset: 0; pointer-events: none; opacity: 0.5;
+        background-image:
+          repeating-linear-gradient(0deg, rgba(255,255,255,0.014) 0 1px, transparent 1px 3px);
+        mix-blend-mode: overlay;
+      }
+      .menu-inner {
+        position: relative; width: min(42rem, 92vw); text-align: center;
+        max-height: 100%; overflow-y: auto; padding: 0.5rem;
+      }
+      .menu-kicker {
+        margin: 0 0 0.5rem; font-size: 0.72rem; letter-spacing: 0.34em;
+        text-transform: uppercase; color: var(--dim);
+      }
+      .menu-brand h1 {
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(1.9rem, 5.2vw, 3.1rem); font-weight: 500;
+        letter-spacing: 0.03em; margin: 0;
+        text-shadow: 0 0 34px rgba(143, 43, 43, 0.5);
+      }
+      .menu-brand h1 span { color: var(--blood); font-style: italic; }
+      .menu-brand .menu-sub {
+        margin: 0.85rem auto 0; max-width: 34ch; color: var(--dim);
+        font-size: 0.86rem; line-height: 1.6;
+      }
+      .menu-rule {
+        width: 4.5rem; height: 1px; margin: 1.4rem auto 0;
+        background: linear-gradient(90deg, transparent, var(--panel-edge), transparent);
+      }
+      .menu-screen { display: none; flex-direction: column; gap: 0.5rem; margin-top: 1.6rem; text-align: left; }
+      .menu-screen.on { display: flex; }
+      .menu-screen h2 {
+        font-family: Georgia, serif; font-weight: 500; font-size: 1.3rem;
+        letter-spacing: 0.06em; margin: 0 0 0.6rem; text-transform: uppercase;
+      }
+      .menu-screen h2 em { font-family: inherit; font-style: italic; font-size: 0.8rem; color: var(--dim); text-transform: none; letter-spacing: 0.02em; margin-left: 0.5rem; }
+      .menu-screen p { margin: 0 0 0.7rem; font-size: 0.86rem; line-height: 1.65; color: #cfc9bb; }
+      .menu-item {
+        display: flex; align-items: baseline; justify-content: center; gap: 0.6rem;
+        width: 100%; padding: 0.8rem 1.1rem; font: inherit; font-size: 0.95rem;
+        letter-spacing: 0.12em; text-transform: uppercase;
+        color: var(--ink); background: rgba(10, 12, 16, 0.55);
+        border: 1px solid var(--panel-edge); border-radius: 2px; cursor: pointer;
+        transition: color 0.15s, border-color 0.15s, background 0.15s, transform 0.15s;
+      }
+      .menu-item em {
+        font-style: normal; text-transform: none; letter-spacing: 0.02em;
+        font-size: 0.76rem; color: var(--dim);
+      }
+      .menu-item:hover, .menu-item:focus-visible {
+        color: var(--accent); border-color: var(--accent);
+        background: rgba(216, 169, 74, 0.12); outline: none; transform: translateX(2px);
+      }
+      .menu-item:hover em, .menu-item:focus-visible em { color: var(--accent); opacity: 0.75; }
+      .menu-item.primary { border-color: rgba(216, 169, 74, 0.55); font-size: 1.05rem; padding: 1rem 1.1rem; }
+      .menu-item.primary span { color: var(--accent); }
+      .menu-item.danger:hover, .menu-item.primary[data-menu="quit"]:focus-visible { border-color: var(--blood); }
+      .menu-hint {
+        margin: 0.5rem 0 0; text-align: center; font-size: 0.7rem;
+        letter-spacing: 0.06em; color: var(--dim);
+      }
+      .menu-hint kbd {
+        background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.16);
+        border-radius: 3px; padding: 0.02rem 0.3rem; font-family: inherit; font-size: 0.68rem;
+      }
+      .menu-row {
+        display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.8rem;
+        padding: 0.55rem 0.2rem; border-bottom: 1px solid rgba(255,255,255,0.06);
+        font-size: 0.88rem; letter-spacing: 0.04em;
+      }
+      .menu-row em { display: block; font-style: normal; font-size: 0.7rem; color: var(--dim); letter-spacing: 0.02em; }
+      .menu-row input[type="range"] { width: 11rem; max-width: 40vw; accent-color: var(--accent); cursor: pointer; }
+      .menu-row input[type="checkbox"] { width: 1.05rem; height: 1.05rem; accent-color: var(--accent); cursor: pointer; }
+      .menu-times { display: flex; gap: 0.3rem; }
+      .menu-times button {
+        background: transparent; border: 1px solid var(--panel-edge); color: var(--ink);
+        font: inherit; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase;
+        padding: 0.25rem 0.55rem; border-radius: 2px; cursor: pointer;
+      }
+      .menu-times button:hover, .menu-times button:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+      .menu-keys { list-style: none; margin: 0 0 0.8rem; padding: 0; font-size: 0.82rem; line-height: 1.9; color: #cfc9bb; }
+      .menu-keys kbd {
+        display: inline-block; min-width: 1.6rem; text-align: center;
+        background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.16);
+        border-radius: 3px; padding: 0.02rem 0.35rem; font-family: inherit; font-size: 0.72rem;
+        margin-right: 0.5rem; color: var(--ink);
+      }
+      .menu-foot {
+        margin: 1.8rem 0 0; font-size: 0.66rem; letter-spacing: 0.08em;
+        color: rgba(168, 162, 148, 0.75); text-transform: uppercase;
+      }
+      /* the HUD has no business showing through the menu */
+      body.menu-open #hud, body.menu-open #crosshair, body.menu-open #prompt,
+      body.menu-open #joystick, body.menu-open #flashBtn { opacity: 0; pointer-events: none; }
+
       /* --------------------------------------------------------------- mobile */
       #joystick {
         position: fixed; left: 1.2rem; bottom: 1.6rem; width: 6.4rem; height: 6.4rem;
@@ -216,6 +323,88 @@
         Tingnan ang <code>CREDITS.md</code>.
       </p>
       <button id="enter" disabled>Pumasok</button>
+    </div>
+
+    <div id="menu" aria-hidden="true" data-mode="home" data-screen="home">
+      <div class="menu-grain" aria-hidden="true"></div>
+      <div class="menu-inner" role="dialog" aria-modal="true" aria-label="Pangunahing menu">
+        <header class="menu-brand">
+          <p class="menu-kicker">Barangay Kabudoy</p>
+          <h1>Maria Labo: <span>Nawawala</span></h1>
+          <p class="menu-sub">
+            Isang gabi, isang kapatid na nawawala, at isang babaeng nakatayo sa gilid ng kalsada.
+            <br /><span style="opacity: 0.7">One night, a missing sibling, and a woman standing at the edge of the road.</span>
+          </p>
+          <div class="menu-rule"></div>
+        </header>
+
+        <section class="menu-screen on" id="menuHome" aria-hidden="false">
+          <button type="button" class="menu-item primary" data-menu="play">
+            <span id="playLabel">Laro</span><em id="playLabelEn">Play</em>
+          </button>
+          <button type="button" class="menu-item" data-menu="settings">
+            <span>Mga Setting</span><em>Settings</em>
+          </button>
+          <button type="button" class="menu-item" data-menu="about">
+            <span>Tungkol</span><em>About</em>
+          </button>
+          <button type="button" class="menu-item danger" data-menu="quit" id="menuQuit" hidden>
+            <span>Bumalik sa simula</span><em>Back to the start</em>
+          </button>
+          <p class="menu-hint">
+            <kbd>↑</kbd><kbd>↓</kbd> pumili · <kbd>Enter</kbd> piliin · <kbd>Esc</kbd> bitawan ang mouse
+          </p>
+        </section>
+
+        <section class="menu-screen" id="menuSettings" aria-hidden="true">
+          <h2>Mga Setting <em>Settings</em></h2>
+          <label class="menu-row">
+            <span>Paglingon <em>Look speed</em></span>
+            <input id="setSensitivity" type="range" min="0.4" max="2.4" step="0.05" value="1" />
+          </label>
+          <label class="menu-row">
+            <span>Tunog <em>Volume</em></span>
+            <input id="setVolume" type="range" min="0" max="1" step="0.05" value="0.85" />
+          </label>
+          <label class="menu-row">
+            <span>Subtitle <em>Subtitles</em></span>
+            <input id="setSubtitles" type="checkbox" checked />
+          </label>
+          <div class="menu-row">
+            <span>Oras <em>Time of day</em></span>
+            <span class="menu-times">
+              <button type="button" data-time="8">Araw</button>
+              <button type="button" data-time="17.5">Dapit-hapon</button>
+              <button type="button" data-time="23">Gabi</button>
+            </span>
+          </div>
+          <button type="button" class="menu-item" data-menu="back"><span>Balik</span><em>Back</em></button>
+        </section>
+
+        <section class="menu-screen" id="menuAbout" aria-hidden="true">
+          <h2>Tungkol <em>About</em></h2>
+          <p>
+            Prototype ng <b>Maria Labo: Nawawala</b> — isang barangay na gawa sa Three.js,
+            may totoong physics (Rapier) at mga CC0 na character. Nakatayo si Maria sa gilid
+            ng kalsada, ilang metro lang mula sa bahay ni Ernie. Hindi siya humahabol. Nakatingin lang.
+          </p>
+          <p style="font-size: 0.8rem; color: var(--dim)">
+            A Three.js + Rapier prototype. Maria stands at the roadside; she does not chase you.
+          </p>
+          <ul class="menu-keys">
+            <li><kbd>W A S D</kbd> lumakad · <kbd>Shift</kbd> tumakbo</li>
+            <li><kbd>E</kbd> kausapin / buksan ang pinto · <kbd>F</kbd> flashlight</li>
+            <li><kbd>G</kbd> tingnan ang bulwagan · <kbd>Esc</kbd> bitawan ang mouse</li>
+          </ul>
+          <p style="font-size: 0.78rem; color: var(--dim)">
+            Character rig: <b>kblood / CharacterCreator</b> (CC0). Tunog:
+            <b>Oculus Audio Pack 1</b>, via Meta Open Sound — CC BY 4.0.
+          </p>
+          <button type="button" class="menu-item" data-menu="back"><span>Balik</span><em>Back</em></button>
+        </section>
+
+        <footer class="menu-foot">CC0 character rig · CC BY 4.0 sound · Three.js + Rapier</footer>
+      </div>
     </div>
 
     <div id="hud">
