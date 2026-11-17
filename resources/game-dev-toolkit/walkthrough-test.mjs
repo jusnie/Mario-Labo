@@ -152,6 +152,37 @@ section("the front door");
 }
 
 
+section("the sagingan");
+{
+  const plants = world3d.grovePlants ?? [];
+  plants.length >= 280 ? ok(`${plants.length} puno ng saging in the grove`) : bad(`only ${plants.length} plants`);
+  const onRoad = plants.filter((p) => Math.abs(p.x) < LAYOUT.roadWidth / 2 + 0.4);
+  onRoad.length === 0 ? ok("none of them stand in the roadbed") : bad(`${onRoad.length} plants stand in the road`);
+
+  // the leaves are the plant: if the crown is smaller than the stem it reads as
+  // a pole with a tuft, which is exactly what was wrong before
+  let crown = null;
+  scene.traverse((o) => {
+    if (o.isInstancedMesh && o.material === world3d.groveLeafMat) crown = o;
+  });
+  if (!crown) bad("no leaf mesh in the grove");
+  else {
+    crown.geometry.computeBoundingBox();
+    const b = crown.geometry.boundingBox;
+    const spanX = b.max.x - b.min.x;
+    const spanZ = b.max.z - b.min.z;
+    const tris = (crown.geometry.index?.count ?? 0) / 3;
+    spanX > 3 && spanZ > 3
+      ? ok(`a plant's crown spans ${spanX.toFixed(1)} x ${spanZ.toFixed(1)} m`)
+      : bad(`crown is only ${spanX.toFixed(1)} x ${spanZ.toFixed(1)} m`);
+    tris > 900 ? ok(`${Math.round(tris)} triangles of leaves per plant`) : bad(`only ${Math.round(tris)} leaf triangles`);
+    crown.material.emissiveIntensity > 0 && crown.material.emissive.getHex() !== 0
+      ? ok("leaves carry a little transmitted light, so undersides do not go black")
+      : bad("leaf material has no emissive: undersides will read black");
+    crown.material.side === THREE.DoubleSide ? ok("leaves are double sided") : bad("leaves are single sided");
+  }
+}
+
 section("Maria");
 {
   // she is a fixed figure, so this checks where the game puts her rather than

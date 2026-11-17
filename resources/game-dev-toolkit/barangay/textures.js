@@ -1107,13 +1107,13 @@ export function bananaLeaf(repeat = 1) {
   c.width = w;
   c.height = h;
   const ctx = c.getContext("2d");
-  ctx.fillStyle = "#3f6b2a";
+  ctx.fillStyle = "#4e7c33";
   ctx.fillRect(0, 0, w, h);
   // veins fanning from the midrib
   for (let i = 0; i < 70; i++) {
     const t = i / 70;
     const y = h * t;
-    ctx.strokeStyle = `rgba(${90 + (i % 7) * 6},${130 + (i % 5) * 8},${60},0.30)`;
+    ctx.strokeStyle = `rgba(${104 + (i % 7) * 7},${148 + (i % 5) * 9},${70},0.32)`;
     ctx.lineWidth = 0.8;
     ctx.beginPath();
     ctx.moveTo(w / 2, y);
@@ -1122,7 +1122,7 @@ export function bananaLeaf(repeat = 1) {
     ctx.lineTo(w, y + h * 0.06);
     ctx.stroke();
   }
-  ctx.fillStyle = "rgba(150,180,90,0.5)";
+  ctx.fillStyle = "rgba(176,204,116,0.55)";
   ctx.fillRect(w / 2 - 2, 0, 4, h);
   // dried edges
   ctx.fillStyle = "rgba(120,100,50,0.16)";
@@ -1131,6 +1131,56 @@ export function bananaLeaf(repeat = 1) {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   cache.set("bananaLeaf", tex);
+  return tex;
+}
+
+/**
+ * Banana pseudostem: overlapping sheath fibre, wet at the base, dry flakes where
+ * old sheaths have split. Painted pale so the vertex colours do the ageing.
+ */
+export function bananaTrunk() {
+  if (cache.has("bananaTrunk")) return cache.get("bananaTrunk");
+  const w = 128;
+  const h = 512;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#9aa568";
+  ctx.fillRect(0, 0, w, h);
+  const r = rnd(31);
+  // long vertical fibres: the leaf bases wrap the stem in strips
+  for (let i = 0; i < 220; i++) {
+    const x = r() * w;
+    const len = h * (0.15 + r() * 0.7);
+    const y = r() * (h - len);
+    ctx.strokeStyle = `rgba(${120 + r() * 50},${130 + r() * 45},${70 + r() * 40},${0.1 + r() * 0.22})`;
+    ctx.lineWidth = 0.6 + r() * 1.8;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (r() - 0.5) * 5, y + len);
+    ctx.stroke();
+  }
+  // the dark seam where one sheath overlaps the next
+  for (let i = 1; i < 5; i++) {
+    const y = (h / 5) * i;
+    ctx.fillStyle = `rgba(70,74,44,${0.28 + r() * 0.12})`;
+    ctx.fillRect(0, y, w, 1 + r() * 2);
+    ctx.fillStyle = `rgba(232,236,198,0.35)`;
+    ctx.fillRect(0, y + 2, w, 1);
+  }
+  // dry flakes and stains
+  for (let i = 0; i < 90; i++) {
+    const y = h * Math.pow(r(), 1.8); // more of them low down
+    ctx.fillStyle = `rgba(${130 + r() * 40},${100 + r() * 40},${55 + r() * 30},${0.1 + r() * 0.25})`;
+    ctx.beginPath();
+    ctx.ellipse(r() * w, y, 2 + r() * 9, 3 + r() * 22, 0, 0, 6.28);
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  cache.set("bananaTrunk", tex);
   return tex;
 }
 

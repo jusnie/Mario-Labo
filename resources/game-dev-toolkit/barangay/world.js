@@ -151,79 +151,274 @@ export class WorldClock {
 }
 
 /* --------------------------------------------------------------- banana trees */
-/** One banana plant: a sheathed trunk with a crown of folded, shredded leaves. */
-function bananaPlantGeometry(seed) {
+
+/**
+ * One banana leaf, built along +Z from its base.
+ *
+ * The old version was a lance pitched downward from the trunk: `tilt` was
+ * negative for nearly every leaf, so the crown read as a black fountain of
+ * spears instead of a plant. A banana leaf leaves the pseudostem *rising* and
+ * then arches over until the tip hangs — so the spine here integrates an
+ * elevation angle that turns over along the length, and the blade is wide in
+ * the middle, pointed at the tip and torn at the edges.
+ */
+function bananaLeafGeometry({
+  length = 1.8,
+  width = 0.52,
+  rise = 0.9, // rad, elevation of the petiole
+  droop = 1.15, // rad the tip turns past horizontal
+  fold = 0.55, // how far the edges drop away from the midrib
+  twist = 0.18,
+  shred = 1,
+  segsL = 10,
+  seed = 1,
+  tint = [1, 1, 1],
+}) {
   const r = rngFactory(seed);
-  const trunkH = 1.5 + r() * 1.25;
-  const lean = (r() - 0.5) * 0.3;
+  const S = [-1, -0.5, 0, 0.5, 1];
+  const petiole = 0.2; // fraction of the length that is stalk, not blade
+  const pos = [];
+  const uv = [];
+  const col = [];
+  const idx = [];
 
-  // trunk built from stacked, slightly offset sheaths so it is not a plain tube
-  const sheaths = [];
-  const sheathCount = 5;
-  for (let i = 0; i < sheathCount; i++) {
-    const t0 = i / sheathCount;
-    const t1 = (i + 1) / sheathCount;
-    const h = trunkH / sheathCount;
-    const rBottom = THREE.MathUtils.lerp(0.2, 0.085, t0);
-    const rTop = THREE.MathUtils.lerp(0.2, 0.085, t1) * 1.06;
-    const geo = new THREE.CylinderGeometry(rTop, rBottom, h * 1.06, 8, 1, true);
-    geo.translate(lean * t1 * t1, h * (t0 + 0.5), 0);
-    sheaths.push(geo);
+  // 1. the spine: walk out along a turning elevation
+  const ds = length / segsL;
+  const rows = [];
+  let pz = 0;
+  let py = 0;
+  for (let i = 0; i <= segsL; i++) {
+    const t = i / segsL;
+    const k = clamp01((t - petiole) / (1 - petiole));
+    // the tip turns down faster than the rest of the blade, the way a heavy
+    // leaf hangs at its end
+    const angle = rise - (rise + droop) * Math.pow(k, 1.55) - 0.45 * Math.pow(k, 5);
+    rows.push({ t, k, pz, py, angle });
+    pz += Math.cos(angle) * ds;
+    py += Math.sin(angle) * ds;
   }
-  const trunkGeo = mergeGeometries(sheaths, false);
-  sheaths.forEach((g) => g.dispose());
 
-  const leafCount = 9 + Math.floor(r() * 4);
-  const leaves = [];
-  for (let i = 0; i < leafCount; i++) {
-    const leaf = bladeGeometry({
-      length: 1.5 + r() * 1.1,
-      width: 0.4 + r() * 0.3,
-      curve: 1.15 + r() * 0.25,
-      rise: 0.9,
-      fold: 0.4 + r() * 0.25,
-      shred: 0.06,
-      segsL: 11,
-      segsW: 4,
-    });
-    // Banana leaves are never one green: the midrib sits in shade, the edges
-    // catch light, tips yellow off and the oldest leaves at the bottom of the
-    // crown go brown. Painting that into the geometry costs nothing to draw.
-    const posA = leaf.attributes.position;
-    const uvA = leaf.attributes.uv;
-    const col = new Float32Array(posA.count * 3);
-    const age = i / leafCount;
-    const tone = 0.86 + r() * 0.24;
-    const old = Math.max(0, age - 0.72) / 0.28; // the lowest leaves die first
-    const tint = new THREE.Color().setRGB(tone, tone * (0.98 + r() * 0.08), tone * 0.82);
-    if (old > 0) tint.lerp(new THREE.Color(0.62, 0.5, 0.26), old * 0.8);
-    for (let k = 0; k < posA.count; k++) {
-      const u = uvA.getX(k);
-      const v = uvA.getY(k);
-      const edge = Math.abs(u * 2 - 1); // 0 at the midrib, 1 at the edge
-      const cupped = 0.62 + edge * 0.34; // fold shadow in the fold itself
-      const tipWarm = THREE.MathUtils.smoothstep(v, 0.72, 1) * 0.16;
-      const base = 1 - THREE.MathUtils.smoothstep(1 - v, 0.86, 1) * 0.3;
-      const c = tint.clone().multiplyScalar(cupped * base);
-      c.r += tipWarm * 0.22;
-      c.g += tipWarm * 0.18;
-      c.b += tipWarm * 0.04;
+  // 2. the blade, row by row
+  for (const row of rows) {
+    // torn edge: a few long splits down the blade, plus fine noise
+    const tear =
+      1 + shred * row.k * (0.15 * Math.sin(row.t * 24 + seed * 1.7) + 0.1 * (r() - 0.5));
+    // broad through the middle, blunt-ish at the tip: not a spear
+    const shape =
+      row.k <= 0
+        ? 0
+        : Math.min(1, Math.pow(row.k / 0.22, 0.6)) * (1 - Math.pow(clamp01((row.k - 0.52) / 0.48), 2.1));
+    const halfW = Math.max(0.01, width * 0.5 * shape);
+    const twistA = twist * row.k;
+    for (const s of S) {
+      // the outer columns carry the torn edge, the rest stay smooth
+      const xLocal = s * halfW * (Math.abs(s) === 1 ? tear : 1);
+      const drop = -fold * halfW * Math.pow(Math.abs(s), 1.5);
+      const cx = xLocal * Math.cos(twistA);
+      const cy = drop + xLocal * Math.sin(twistA) * 0.6;
+      pos.push(cx, row.py + cy, row.pz);
+      uv.push(s * 0.5 + 0.5, row.t);
+      // midrib sits in its own shadow, the edges catch the light
+      const edge = Math.abs(s);
+      const shade = (0.74 + 0.34 * edge) * (1 - 0.2 * clamp01((row.t - 0.85) / 0.15));
+      const fleck = 1 + 0.1 * Math.sin(row.t * 11 + seed);
+      // the torn edges dry out first: rust on the outermost columns
+      const dryEdge = Math.abs(s) === 1 ? 0.16 * clamp01((row.k - 0.45) / 0.55) : 0;
+      col.push(
+        shade * fleck * tint[0] * (1 + dryEdge * 0.9),
+        shade * tint[1] * (1 - dryEdge * 0.25),
+        shade * fleck * tint[2] * (1 - dryEdge * 0.6)
+      );
+    }
+  }
+  for (let i = 0; i < segsL; i++) {
+    for (let j = 0; j < S.length - 1; j++) {
+      const a = i * S.length + j;
+      const b = a + 1;
+      const c = a + S.length;
+      const d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * The pseudostem: overlapping sheaths with a collar at each one, dry brown at
+ * the base, green where the leaf bases wrap. Painted with vertex colours on top
+ * of the fibre map, so the instanced mesh still needs no material per plant.
+ */
+function bananaTrunkGeometry({ height, lean, seed, at = [0, 0, 0], radius = 1, count = 6 }) {
+  const r = rngFactory(seed);
+  const parts = [];
+  const baseR = (0.23 + r() * 0.035) * radius;
+  const topR = (0.125 + r() * 0.02) * radius;
+  /** paint dry-at-the-base, green-up-top, dark-in-the-throat */
+  const paint = (geo, i) => {
+    const pos = geo.attributes.position;
+    const col = new Float32Array(pos.count * 3);
+    for (let k = 0; k < pos.count; k++) {
+      const y = (pos.getY(k) - at[1]) / Math.max(0.001, height);
+      const dry = clamp01((0.2 - y) / 0.2); // sheaths die brown at the base
+      const throat = clamp01((y - 0.82) / 0.18); // and go dark up in the crown
+      const seam = 0.84 + 0.16 * Math.sin(k * 2.3 + i * 1.7);
+      const c = new THREE.Color(0.56, 0.63, 0.32);
+      c.lerp(new THREE.Color(0.42, 0.32, 0.19), dry * 0.95);
+      c.multiplyScalar(seam * (1 - 0.3 * throat));
       col[k * 3] = c.r;
       col[k * 3 + 1] = c.g;
       col[k * 3 + 2] = c.b;
     }
-    leaf.setAttribute("color", new THREE.BufferAttribute(col, 3));
-    const azimuth = (i / leafCount) * Math.PI * 2 + r() * 0.55;
-    const tilt = -0.1 - r() * 0.9;
-    const roll = (r() - 0.5) * 0.45;
+    geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    return geo;
+  };
+  for (let i = 0; i < count; i++) {
+    const t0 = i / count;
+    const t1 = (i + 1) / count;
+    // each sheath bulges a hair and steps in at its collar: a machine-turned
+    // cylinder is the one thing a pseudostem never looks like
+    const bulge = 1 + 0.03 * Math.sin(i * 2.1 + seed);
+    const rb = THREE.MathUtils.lerp(baseR, topR, Math.pow(t0, 0.8)) * bulge;
+    const rt = THREE.MathUtils.lerp(baseR, topR, Math.pow(t1, 0.8)) * 1.035;
+    const h = (height / count) * 1.05;
+    const geo = new THREE.CylinderGeometry(rt, rb, h, 9, 1, true);
+    geo.translate(at[0] + lean * t1 * t1, at[1] + height * (t0 + 0.5) - h * 0.02, at[2]);
+    parts.push(paint(geo, i));
+  }
+  // the throat: the rolled-up new leaf that comes out of the top, so the stem
+  // does not end in a ring of open cylinder rims
+  const throatH = height * 0.26;
+  // wider than the topmost sheath so it hides that sheath's open rim, and its
+  // base sits below the rim so the join is buried inside the crown
+  const throat = new THREE.ConeGeometry(topR * 1.12, throatH, 10, 1, true);
+  throat.translate(at[0] + lean, at[1] + height - 0.04 + throatH / 2, at[2]);
+  parts.push(paint(throat, 99));
+  // the bunched leaf bases at the crown: without it the stem ends in a rim
+  const collar = new THREE.SphereGeometry(topR * 1.62, 10, 7);
+  collar.scale(1, 0.78, 1);
+  collar.translate(at[0] + lean, at[1] + height - 0.06, at[2]);
+  parts.push(paint(collar, 98));
+  return parts;
+}
+
+/** One banana plant: a sheathed pseudostem, a crown of arching leaves, suckers. */
+function bananaPlantGeometry(seed) {
+  const r = rngFactory(seed);
+  const trunkH = 1.45 + r() * 0.7;
+  const lean = (r() - 0.5) * 0.26;
+  const trunkParts = bananaTrunkGeometry({ height: trunkH, lean, seed });
+  const leaves = [];
+
+  /** Place one leaf: its base at `at`, spun to `azimuth` around Y. */
+  const addLeaf = ({ at, azimuth, roll = 0, tint = [1, 1, 1], ...opts }) => {
+    const geo = bananaLeafGeometry({ seed: Math.floor(r() * 100000), tint, ...opts });
     const m = new THREE.Matrix4().compose(
-      new THREE.Vector3(lean, trunkH - r() * 0.1, 0),
-      new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt, azimuth, roll, "YXZ")),
+      new THREE.Vector3(at[0], at[1], at[2]),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, azimuth, roll, "YXZ")),
       new THREE.Vector3(1, 1, 1)
     );
-    leaf.applyMatrix4(m);
-    leaves.push(leaf);
+    geo.applyMatrix4(m);
+    leaves.push(geo);
+  };
+
+  // the crown: three young leaves standing up, the rest arching out and over,
+  // each from a slightly different height so they do not all spring from a point
+  const crownY = trunkH - 0.03;
+  const attach = (i, n, spread = 0.055) => {
+    const a = (i / n) * Math.PI * 2 + r() * 0.6;
+    return {
+      // all of them come out inside the crown collar, so their narrow bases
+      // are hidden instead of sticking out under it
+      at: [Math.cos(a) * spread, crownY - (i % 3) * 0.035, Math.sin(a) * spread],
+      azimuth: a,
+    };
+  };
+  for (let i = 0; i < 3; i++) {
+    const { at, azimuth } = attach(i, 3);
+    addLeaf({
+      at,
+      azimuth,
+      roll: (r() - 0.5) * 0.3,
+      length: 1.15 + r() * 0.45,
+      width: 0.42 + r() * 0.1,
+      rise: 1.0 + r() * 0.25,
+      droop: 0.25 + r() * 0.25,
+      segsL: 8,
+      shred: 0.5,
+    });
   }
+  for (let i = 0; i < 9; i++) {
+    const { at, azimuth } = attach(i, 9);
+    addLeaf({
+      at,
+      azimuth,
+      roll: (r() - 0.5) * 0.45,
+      length: 1.95 + r() * 0.55,
+      width: 0.62 + r() * 0.16,
+      rise: 0.5 + r() * 0.5,
+      droop: 0.3 + r() * 0.6,
+      twist: (r() - 0.5) * 0.9,
+      tint: [0.84 + r() * 0.24, 0.86 + r() * 0.18, 0.8 + r() * 0.16],
+      segsL: 8,
+    });
+  }
+  // the oldest two hang dead down the trunk
+  for (let i = 0; i < 2; i++) {
+    const a = r() * Math.PI * 2;
+    addLeaf({
+      at: [Math.cos(a) * 0.05, crownY - 0.16 - i * 0.05, Math.sin(a) * 0.05],
+      azimuth: a,
+      length: 1.2 + r() * 0.35,
+      width: 0.34,
+      rise: -0.1,
+      droop: 0.95,
+      fold: 0.8,
+      segsL: 7,
+      tint: [1.3, 1.02, 0.5],
+    });
+  }
+
+  // suckers: the small shoots that make a banana clump a clump
+  const suckers = 1 + Math.floor(r() * 2);
+  for (let k = 0; k < suckers; k++) {
+    const a = r() * Math.PI * 2;
+    const d = 0.26 + r() * 0.16;
+    const sx = Math.cos(a) * d;
+    const sz = Math.sin(a) * d;
+    const h = 0.32 + r() * 0.26;
+    trunkParts.push(
+      ...bananaTrunkGeometry({
+        height: h,
+        lean: (r() - 0.5) * 0.1,
+        seed: seed + 100 + k,
+        at: [sx, 0, sz],
+        radius: 0.42,
+        count: 2,
+      })
+    );
+    for (let i = 0; i < 3; i++) {
+      const la = r() * Math.PI * 2;
+      addLeaf({
+        at: [sx, h - 0.02, sz],
+        azimuth: la,
+        length: 0.46 + r() * 0.3,
+        width: 0.2 + r() * 0.08,
+        rise: 0.95 + r() * 0.25,
+        droop: 0.7 + r() * 0.35,
+        segsL: 6,
+        shred: 0.4,
+      });
+    }
+  }
+
+  const trunkGeo = mergeGeometries(trunkParts, false);
+  trunkParts.forEach((g) => g.dispose());
   const leafGeo = mergeGeometries(leaves, false);
   leaves.forEach((g) => g.dispose());
   return { trunkGeo, leafGeo, trunkH };
@@ -238,6 +433,18 @@ function buildGrove(scene, colliders) {
     if (inClearing(x, z)) return;
     const v = Math.floor(r() * variants.length);
     placements[v].push({ x, z, rot: r() * Math.PI * 2, scale });
+    // a sagingan is planted as clumps, not single poles: a sucker's sucker
+    // grows up right beside the parent
+    if (r() < 0.4) {
+      const a = r() * Math.PI * 2;
+      const d = 0.7 + r() * 0.9;
+      placements[v].push({
+        x: x + Math.cos(a) * d,
+        z: z + Math.sin(a) * d,
+        rot: r() * Math.PI * 2,
+        scale: scale * (0.68 + r() * 0.28),
+      });
+    }
   };
 
   // lined rows along both shoulders, the whole way to the hall lawn
@@ -248,7 +455,7 @@ function buildGrove(scene, colliders) {
     }
   }
   // depth: groves behind the rows
-  for (let i = 0; i < 190; i++) {
+  for (let i = 0; i < 150; i++) {
     const z = LAYOUT.groveStartZ - r() * (LAYOUT.groveStartZ - LAYOUT.groveEndZ);
     const side = r() < 0.5 ? -1 : 1;
     const x = side * (8.5 + Math.pow(r(), 0.7) * 34);
@@ -256,11 +463,23 @@ function buildGrove(scene, colliders) {
     place(x, z, 0.75 + r() * 0.55);
   }
 
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x93a05a, roughness: 0.95, flatShading: true });
+  const trunkMat = new THREE.MeshStandardMaterial({
+    map: TEX.bananaTrunk(),
+    vertexColors: true,
+    roughness: 0.88,
+    flatShading: true,
+  });
+  trunkMat.map.repeat.set(1, 2.4);
   const leafMat = new THREE.MeshStandardMaterial({
     map: TEX.bananaLeaf(),
     vertexColors: true,
-    roughness: 0.72,
+    roughness: 0.62,
+    // light coming through the blade: without it every underside in the grove
+    // is ambient-only and the whole row reads black at midday
+    emissive: new THREE.Color(0x354d20),
+    emissiveIntensity: 0.55, // update() trims this to the daylight
+    // leaves are thin: they need to catch light from below or the underside of
+    // every crown goes flat black, which is half of what read wrong before
     side: THREE.DoubleSide,
   });
 
@@ -288,7 +507,12 @@ function buildGrove(scene, colliders) {
 
   const near = placements.flat().filter((p) => Math.abs(p.x) < 9);
   for (const p of near) colliders.push({ half: [0.22, 1.4, 0.22], pos: [p.x, 1.4, p.z], tag: "banana" });
-  return placements.reduce((n, l) => n + l.length, 0);
+  return {
+    count: placements.reduce((n, l) => n + l.length, 0),
+    plants: placements.flat(),
+    leafMat,
+    trunkMat,
+  };
 }
 
 /* ----------------------------------------------------------------- fields */
@@ -1533,7 +1757,8 @@ export function buildWorld(scene, opts = {}) {
   road.name = "road";
   scene.add(road);
 
-  const groveCount = buildGrove(scene, colliders);
+  const grove = buildGrove(scene, colliders);
+  const groveCount = grove.count;
   const fields = buildFields(scene);
   const hall = buildHall(scene, colliders);
   const backdrop = buildBackdrop(scene);
@@ -1668,7 +1893,7 @@ export function buildWorld(scene, opts = {}) {
 
   const windowMats = [...hall.glass, ...houses.flatMap((h) => h.glass)];
 
-  const state = { clock, colliders, hall, houses, groveCount, fields, hemi, sun, moon, ambient, sky: skyUniforms, terrain: backdrop.terrain };
+  const state = { clock, colliders, hall, houses, groveCount, grovePlants: grove.plants, groveLeafMat: grove.leafMat, fields, hemi, sun, moon, ambient, sky: skyUniforms, terrain: backdrop.terrain };
 
   const sunPos = new THREE.Vector3();
   const moonPos = new THREE.Vector3();
@@ -1773,6 +1998,8 @@ export function buildWorld(scene, opts = {}) {
   function update(dt, cameraPosition) {
     clock.advance(dt);
     updateLighting();
+    // leaves glow with transmitted light in daylight, and do not at night
+    grove.leafMat.emissiveIntensity = 0.5 * clock.daylight * clock.daylight;
 
     if (cameraPosition) {
       sky.position.set(cameraPosition.x, 0, cameraPosition.z);

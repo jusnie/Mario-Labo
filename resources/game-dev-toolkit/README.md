@@ -357,8 +357,15 @@ reads as a diorama:
   mountains, drifting clouds, stars at night.
 - **The extended approach**: the hall now sits at `z = -280`, ~2× the previous
   140 m, at the end of a seamless road. Roughly 300 puno ng saging line both
-  shoulders the whole way, with deeper groves behind them, three plant variants
-  with tapered trunks and folded, wind-shredded leaves.
+  shoulders the whole way, with deeper groves behind them. Each plant is a
+  sheathed pseudostem (six bulging sheaths, dry at the base, a rolled throat and
+  a collar of bunched leaf bases at the top) carrying 14 leaves: three young
+  ones standing up, nine arching out and over, two dead ones hanging brown. The
+  blade is built from an elevation curve rather than a straight lance, so it
+  leaves the stem rising and turns over at the tip; the midrib is a real ridge,
+  the edges tear, and a little emissive stands in for light coming through the
+  leaf so no underside in the row goes black at noon. Plants are placed in
+  clumps of two, and each carries one or two suckers at its foot.
 - **The barangay hall**: remodelled from the owner's elevation sheet — two
   storeys on a raised plinth, a recessed entrance bay between square columns, a
   balustraded balcony carrying the `BARANGAY KABUDOY` sign on its rail, side

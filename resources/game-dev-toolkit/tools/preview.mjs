@@ -298,6 +298,14 @@ function render(scene, camera, outPath) {
     const mat = Array.isArray(obj.material) ? obj.material[0] : obj.material;
     if (!mat || mat.isShaderMaterial) return; // sky dome: the gradient already stands in
     const base = materialColour(mat);
+    // emissive is added flat, the way the renderer does it (leaf translucency)
+    const emis = mat.emissive
+      ? [
+          mat.emissive.r * (mat.emissiveIntensity ?? 1),
+          mat.emissive.g * (mat.emissiveIntensity ?? 1),
+          mat.emissive.b * (mat.emissiveIntensity ?? 1),
+        ]
+      : [0, 0, 0];
     // vertex colours matter on the terrain ring, which is all one material
     const vcol = mat.vertexColors ? geo.attributes.color : null;
     const uvs = geo.attributes.uv ?? null;
@@ -468,9 +476,9 @@ function render(scene, camera, outPath) {
             const tu = (w0 * ua + w1 * ub + w2 * uc) * z;
             const tv = (w0 * va + w1 * vb + w2 * vc) * z;
             sampleTexture(tdata, tu, tv, texPixel);
-            const r0 = encodeSRGB(acesOne(cr * toLinear(texPixel[0]) * irrR * EXPOSURE)) * 255;
-            const g0 = encodeSRGB(acesOne(cg * toLinear(texPixel[1]) * irrG * EXPOSURE)) * 255;
-            const b0 = encodeSRGB(acesOne(cb * toLinear(texPixel[2]) * irrB * EXPOSURE)) * 255;
+            const r0 = encodeSRGB(acesOne(cr * toLinear(texPixel[0]) * irrR * EXPOSURE + emis[0] * EXPOSURE)) * 255;
+            const g0 = encodeSRGB(acesOne(cg * toLinear(texPixel[1]) * irrG * EXPOSURE + emis[1] * EXPOSURE)) * 255;
+            const b0 = encodeSRGB(acesOne(cb * toLinear(texPixel[2]) * irrB * EXPOSURE + emis[2] * EXPOSURE)) * 255;
             if (alphaBlend) {
               // contact shadows and other transparent decals: blend, no depth write
               const al = texPixel[3] * (mat.opacity ?? 1);
@@ -483,9 +491,9 @@ function render(scene, camera, outPath) {
               colour[ci + 2] = b0;
             }
           } else {
-            const r0 = encodeSRGB(acesOne(cr * irrR * EXPOSURE)) * 255;
-            const g0 = encodeSRGB(acesOne(cg * irrG * EXPOSURE)) * 255;
-            const b0 = encodeSRGB(acesOne(cb * irrB * EXPOSURE)) * 255;
+            const r0 = encodeSRGB(acesOne(cr * irrR * EXPOSURE + emis[0] * EXPOSURE)) * 255;
+            const g0 = encodeSRGB(acesOne(cg * irrG * EXPOSURE + emis[1] * EXPOSURE)) * 255;
+            const b0 = encodeSRGB(acesOne(cb * irrB * EXPOSURE + emis[2] * EXPOSURE)) * 255;
             if (alphaBlend) {
               const al = mat.opacity ?? 1;
               colour[ci] = colour[ci] * (1 - al) + r0 * al;
@@ -692,6 +700,54 @@ if (which === "street" || which === "all") {
     "preview-street.png"
   );
   void world;
+}
+
+if (which === "grove" || which === "all") {
+  // the puno ng saging: a row of them from the road, the way you meet them
+  const scene = new THREE.Scene();
+  const world = buildWorld(scene, { startHour: skyHour });
+  EXPOSURE = world.exposure ?? EXPOSURE;
+  const want = { x: 6.6, z: -56 };
+  const target = (world.grovePlants ?? []).reduce(
+    (best, p) => {
+      const d = Math.hypot(p.x - want.x, p.z - want.z);
+      return d < best.d ? { d, p } : best;
+    },
+    { d: Infinity, p: want }
+  ).p;
+  render(
+    scene,
+    cameraAt(
+      { x: 1.6, y: 1.7, z: target.z + 18 },
+      { x: target.x, y: 2.4 * (target.scale ?? 1), z: target.z }
+    ),
+    "preview-grove.png"
+  );
+}
+
+if (which === "banana" || which === "all") {
+  // one plant close up, picked from the real placements so it is always there
+  const scene = new THREE.Scene();
+  const world = buildWorld(scene, { startHour: skyHour });
+  EXPOSURE = world.exposure ?? EXPOSURE;
+  const want = { x: 6.2, z: -50 };
+  const target = (world.grovePlants ?? []).reduce(
+    (best, p) => {
+      const d = Math.hypot(p.x - want.x, p.z - want.z);
+      return d < best.d ? { d, p } : best;
+    },
+    { d: Infinity, p: want }
+  ).p;
+  const crown = 2.1 * (target.scale ?? 1);
+  render(
+    scene,
+    cameraAt(
+      { x: target.x - 3.4, y: 1.5, z: target.z + 0.6 },
+      { x: target.x, y: crown * 0.72, z: target.z },
+      44
+    ),
+    "preview-banana.png"
+  );
 }
 
 if (which === "hall" || which === "all") {
