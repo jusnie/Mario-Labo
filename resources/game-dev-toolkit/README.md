@@ -242,6 +242,19 @@ node tools/sky-preview.mjs          # preview-sky.png: 05:12 .. 18:18 side by si
 SKY_HOUR=6.4 node tools/preview.mjs street   # any preview, under any hour's sky
 ```
 
+Characters need a different renderer: they are skinned, so `tools/char-preview.mjs`
+loads the same rig `characters.js` does — morphs, garments rebound by bone name,
+hair, tints, plus the bone-attached extras — runs the skinning on the CPU and
+rasterises a front / three-quarter / back sheet. No textures (the GLB maps need a
+DOM) and a flat three-point light, but it is enough to judge silhouette,
+proportion, colour and pose:
+
+```bash
+node tools/char-preview.mjs                        # preview-maria.png
+PREVIEW_LOOK=tindera node tools/char-preview.mjs preview-tindera.png
+PREVIEW_CLIP=walk PREVIEW_TIME=0.4 node tools/char-preview.mjs
+```
+
 Textures only appear if the optional `@napi-rs/canvas` package is installed
 (dev-only, not a dependency of the game):
 
@@ -362,6 +375,13 @@ reads as a diorama:
   breathing clips), Filipino subtitles with an English gloss, a 14-item shop,
   ₱50 to start, a no-credit response when the money is short, and a camera that
   glides to her and back without losing your position or flashlight state.
+- **Maria Labo**, standing in the weeds off the left shoulder 41 m down the road
+  from where Ernie starts. The CC0 rig gives her a body; the parts that make her
+  *her* are built on top of it — a skirt that hangs from the pelvis bone to her
+  ankles (the rig only ships a knee-length dress), 26 strands of hair over her
+  face weighted to the head bone, ashen skin, bare feet, a bowed head. She is
+  solid to the capsule, and her head comes up and turns to follow you inside
+  22 m, then drops again. `tools/char-preview.mjs` renders her three-view sheet.
 - Ernie's house with garden bed, porch bulb, and a synthesised radio.
 - 24-hour clock, day/dusk/night lighting, midnight dog howl, footsteps and
   crickets, sound captions for accessibility.
@@ -371,8 +391,10 @@ reads as a diorama:
 
 ## What is *not* implemented (do not claim otherwise)
 
-- Maria Labo is **not** in the scene and there is no chase or story progression.
-  Only her look recipe (`LOOKS.maria`) exists.
+- Maria Labo is in the scene as a **fixed figure only**: one spot, one idle
+  breathing clip, a head that tracks you. There is no chase, no dialogue, no
+  story progression and no other form of her (the horror version of the legend
+  is not modelled). She does not walk, and nothing happens when you reach her.
 - Shop items are not usable; money and bag are session-only.
 - The hall interior is locked; only the exterior and lawn exist.
 - No recorded audio: the dog howl is **synthesised**, not the CC0 recording the
@@ -396,9 +418,9 @@ resources/game-dev-toolkit/
     index.html                        UI, import map, HUD, shop panel
     main.js                           Rapier player, input, interactions, loop
     world.js                          terrain, road, grove, hall, fields, sky, clock
-    places.js                         store, bench, tindera, Ernie's house, posts
+    places.js                         store, bench, tindera, Ernie's house, Maria, posts
     models.js                         component library: roofs, windows, doors, props, terrain
-    characters.js                     CC0 body/garment factory, morphs, clips
+    characters.js                     CC0 body/garment factory, morphs, clips, Maria's pieces
     surfaces.js                       which footstep surface is underfoot
     textures.js                       procedural canvas surfaces
     physics.js                        Rapier world + shared character step
@@ -406,6 +428,7 @@ resources/game-dev-toolkit/
     sound.js                          recorded effects (CC BY 4.0) + synth fallback, radio
   walkthrough-test.mjs                 headless route test (no browser needed)
   tools/preview.mjs                    software renderer: scene -> PNG, no GPU
+  tools/char-preview.mjs               software renderer: skinned character -> PNG
   tools/dumptex.mjs                    one procedural texture -> PNG, for inspection
   tools/sky-preview.mjs                the sky dome at six times of day
   tools/fetch-oculus-audio.mjs        re-downloads the 57 vendored sound effects

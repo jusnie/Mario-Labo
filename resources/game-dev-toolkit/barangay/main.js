@@ -12,7 +12,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { buildWorld, LAYOUT } from "./world.js";
 import { buildPhysics, stepPlayer, createSwingingDoor } from "./physics.js";
 import { surfaceAt } from "./surfaces.js";
-import { createStore, createErniesHouse, buildStreetFurniture } from "./places.js";
+import { createStore, createErniesHouse, buildStreetFurniture, createMaria } from "./places.js";
 import { CharacterLibrary } from "./characters.js";
 import { AudioEngine } from "./sound.js";
 import { PRODUCTS, Wallet } from "./shop.js";
@@ -88,6 +88,7 @@ async function boot() {
   progress(64, "Nilalagay ang sari-sari store at bahay…");
   const store = await createStore(scene, world3d.colliders, characters);
   const house = createErniesHouse(scene, world3d.colliders);
+  const maria = await createMaria(scene, characters, world3d.colliders);
 
   progress(80, "Binubuo ang physics world…");
   const physics = buildPhysics(world3d.colliders);
@@ -536,6 +537,7 @@ async function boot() {
     world3d.update(dt, camera.position);
     renderer.toneMappingExposure = world3d.exposure ?? 1.05;
     store.update(dt);
+    maria?.update(dt, camera.position);
     audio.setNight(1 - world3d.clock.daylight);
     audio.setDaylight(world3d.clock.daylight);
     audio.setBirds(world3d.clock.daylight > 0.55);

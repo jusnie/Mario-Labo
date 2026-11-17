@@ -39,10 +39,11 @@ globalThis.document = {
 const THREE = await import("three");
 const RAPIER = await import("@dimforge/rapier3d-compat");
 const { buildWorld, gableRoof, buildHouse } = await import("./barangay/world.js");
-const { createStore, createErniesHouse, buildStreetFurniture } = await import("./barangay/places.js");
+const { createStore, createErniesHouse, buildStreetFurniture, MARIA_SPOT, mariaCollider } = await import("./barangay/places.js");
 const { buildPhysics, stepPlayer, createSwingingDoor } = await import("./barangay/physics.js");
 const { surfaceAt, SURFACE_KINDS } = await import("./barangay/surfaces.js");
 const { SURFACES } = await import("./barangay/sound.js");
+const { LOOKS } = await import("./barangay/characters.js");
 
 let failures = 0;
 const ok = (m) => console.log(`  \u2713 ${m}`);
@@ -60,6 +61,9 @@ const t0 = performance.now();
 const world3d = buildWorld(scene, { startHour: 8 });
 buildStreetFurniture(scene, world3d.colliders);
 const store = await createStore(scene, world3d.colliders, null);
+// the character rigs cannot load here, but her footprint can: it has to exist
+// before the physics world is built
+world3d.colliders.push(mariaCollider());
 const house = createErniesHouse(scene, world3d.colliders);
 const buildMs = performance.now() - t0;
 
@@ -147,6 +151,31 @@ section("the front door");
   doorPhysics.setAngle(0);
 }
 
+
+section("Maria");
+{
+  // she is a fixed figure, so this checks where the game puts her rather than
+  // the model itself (tools/char-preview.mjs draws that)
+  const look = LOOKS.maria;
+  look && typeof look.extras === "function"
+    ? ok("Maria's recipe adds the pieces the rig has no morph for (skirt, hair)")
+    : bad("Maria has no extras");
+  look?.skin !== undefined && look?.garments?.length === 1 && !look.garments.includes("clothing_shoes.glb")
+    ? ok("she is ashen and barefoot, not wearing the village's shoes")
+    : bad("Maria is still wearing shoes or has no skin tint");
+
+  const offRoad = Math.abs(MARIA_SPOT.x) > LAYOUT.roadWidth / 2 + 0.5;
+  offRoad ? ok(`she stands off the road (x ${MARIA_SPOT.x}, road half-width ${LAYOUT.roadWidth / 2})`) : bad("Maria stands in the road");
+  const inBounds =
+    MARIA_SPOT.x > LAYOUT.playMinX && MARIA_SPOT.x < LAYOUT.playMaxX && MARIA_SPOT.z > LAYOUT.playMinZ && MARIA_SPOT.z < LAYOUT.playMaxZ;
+  inBounds ? ok("her spot is inside the play bounds") : bad("Maria is outside the play bounds");
+  const ground = surfaceAt(MARIA_SPOT.x, MARIA_SPOT.z);
+  ground === "grass" ? ok("she is standing in the weeds, not on the roadbed") : bad(`Maria stands on ${ground}`);
+
+  // the walk from the start to the hall passes within sight of her
+  const passBy = Math.hypot(MARIA_SPOT.x, MARIA_SPOT.z - 2.5);
+  passBy < 45 ? ok(`she is ${passBy.toFixed(0)}m from where Ernie starts`) : bad(`Maria is ${passBy.toFixed(0)}m from the start`);
+}
 
 function walkTo(targetX, targetZ, seconds = 240, speed = 2.55) {
   const dt = 1 / 60;

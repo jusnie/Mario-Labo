@@ -556,3 +556,80 @@ export function buildStreetFurniture(scene, colliders) {
 
   return { group: street, lampMats };
 }
+
+/* ------------------------------------------------------------------ Maria */
+
+/** Where she stands: off the left shoulder, past Ernie's house, facing the road. */
+export const MARIA_SPOT = { x: -4.9, z: -38, rotationY: Math.PI / 2 - 0.22 };
+
+/** Her footprint in the physics world: solid to the capsule, not walk-through. */
+export function mariaCollider() {
+  return { half: [0.17, 0.86, 0.17], pos: [MARIA_SPOT.x, 0.86, MARIA_SPOT.z], tag: "maria" };
+}
+
+/**
+ * Maria Labo, standing in the weeds with her head down. She does not walk, she
+ * does not chase: her head simply comes up and turns to follow you once you are
+ * near enough to notice, and drops again when you have gone. That is the whole
+ * of her — a fixed figure that is always facing slightly the wrong way.
+ */
+export async function createMaria(scene, characters, colliders) {
+  if (!characters) return null;
+  let figure = null;
+  try {
+    figure = await characters.create("maria", { animation: "idle_breathe" });
+  } catch (err) {
+    console.warn("[places] Maria failed to load:", err?.message ?? err);
+    return null;
+  }
+  const { root, bones, postUpdate } = figure;
+  root.position.set(MARIA_SPOT.x, 0, MARIA_SPOT.z);
+  root.rotation.y = MARIA_SPOT.rotationY;
+  scene.add(root);
+  // she is solid: you can walk around her, not through her
+  colliders?.push(mariaCollider());
+
+  const neck = bones?.get("neck_01") ?? null;
+  const head = bones?.get("head") ?? null;
+  const tracking = { yaw: 0, pitch: 0, seen: 0 };
+  if (neck && head) {
+    postUpdate.push(() => {
+      neck.rotation.y += tracking.yaw * 0.42;
+      neck.rotation.x += tracking.pitch * 0.45;
+      head.rotation.y += tracking.yaw * 0.58;
+      head.rotation.x += tracking.pitch * 0.55;
+    });
+  }
+
+  const local = new THREE.Vector3();
+  const NEAR = 22; // metres; further than this and she is only a shape
+  return {
+    root,
+    figure,
+    spot: MARIA_SPOT,
+    /** yaw/pitch the head has settled on, for tests */
+    get tracking() {
+      return tracking;
+    },
+    update(dt, playerPos) {
+      figure.mixer.update(dt);
+      if (!tracking || !playerPos || !neck || !head) return;
+      local.copy(playerPos).sub(root.position);
+      const distance = Math.hypot(local.x, local.z);
+      const reach = THREE.MathUtils.clamp(1 - distance / NEAR, 0, 1);
+      let targetYaw = 0;
+      let targetPitch = 0;
+      if (reach > 0.001) {
+        // the rig looks down +Z, so its yaw is measured from there
+        targetYaw = Math.atan2(local.x, local.z) - root.rotation.y;
+        targetYaw = Math.atan2(Math.sin(targetYaw), Math.cos(targetYaw));
+        targetYaw = THREE.MathUtils.clamp(targetYaw, -1.15, 1.15) * reach;
+        // close up, the head comes up out of its bow
+        targetPitch = -0.2 * Math.max(0, 1 - distance / 7);
+      }
+      const k = Math.min(1, dt * 2.6);
+      tracking.yaw += (targetYaw - tracking.yaw) * k;
+      tracking.pitch += (targetPitch - tracking.pitch) * k;
+    },
+  };
+}

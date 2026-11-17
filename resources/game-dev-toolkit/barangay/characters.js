@@ -56,23 +56,179 @@ export const LOOKS = {
     tints: { "clothing_dress.glb": 0x6f8f7a },
     height: 1.58,
   },
-  // Maria Labo, everyday form: long floral dress, long hair. Not yet in gameplay.
+  /**
+   * Maria Labo. Tall, thin, ashen; a black dress that goes to the ankles, black
+   * hair to the waist and no shoes. The rig cannot give her the parts that make
+   * her *her* — the floor-length skirt and the hair hanging over the face — so
+   * those are separate pieces attached to the pelvis and head bones by
+   * `attachMariaDress()`; the head sits low so the face is under the hair.
+   */
   maria: {
     morphs: {
-      gender_female: 0.96,
+      gender_female: 0.97,
       age_child: 0.02,
-      height_tall: 0.3,
-      weight_min: 0.25,
-      face_eye_size_decr: 0.25,
-      face_cheekbones_decr: 0.3,
-      face_chin_decr: 0.2,
+      height_tall: 0.5,
+      weight_min: 0.42,
+      muscle_min: 0.3,
+      face_cheekbones_decr: 0.45,
+      face_eye_size_decr: 0.3,
+      face_chin_decr: 0.22,
+      face_jaw_width_decr: 0.18,
     },
-    garments: ["clothing_dress.glb", "clothing_shoes.glb"],
+    garments: ["clothing_dress.glb"],
     hair: "hair_long01.glb",
-    tints: { "clothing_dress.glb": 0x8d4a4a },
-    height: 1.66,
+    tints: { "clothing_dress.glb": 0x241f1e },
+    // ashen, a little grey, the way a body reads under a bulb
+    skin: 0xc9c1b8,
+    height: 1.73,
+    extras: attachMariaDress,
+    pose: [
+      ["neck_01", [0.2, 0, 0]],
+      ["head", [0.14, 0, 0.05]],
+      ["spine_02", [0.04, 0, 0.02]],
+    ],
   },
 };
+
+/* ----------------------------------------------------------- Maria's pieces */
+
+/**
+ * The two things the CC0 rig has no morph for: a skirt that reaches her ankles
+ * and a curtain of hair over her face. Both are attached to bones, so they ride
+ * the clips — and both are built in metres after the rig is scaled, which is
+ * why they hang off the bones instead of being part of the body mesh.
+ */
+export function attachMariaDress({ holder, bones, height }) {
+  if (!holder || !bones) return;
+  holder.updateMatrixWorld(true);
+
+  const clothMat = new THREE.MeshStandardMaterial({
+    color: 0x2b2727,
+    roughness: 0.95,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  });
+  const hairMat = new THREE.MeshStandardMaterial({
+    color: 0x121010,
+    roughness: 0.82,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  });
+
+  const world = (boneName) => {
+    const bone = bones.get(boneName);
+    if (!bone) return null;
+    const v = new THREE.Vector3();
+    bone.getWorldPosition(v);
+    return v;
+  };
+
+  const pelvis = bones.get("pelvis");
+  const head = bones.get("head");
+  const hipL = world("thigh_l");
+  const hipR = world("thigh_r");
+  const pelvisAt = world("pelvis");
+
+  if (pelvis && pelvisAt && hipL && hipR) {
+    const waistY = pelvisAt.y + 0.09;
+    const hemY = 0.055; // just above the ground, so she does not float
+    const rWaist = Math.max(0.14, hipL.distanceTo(hipR) / 2 + 0.075);
+    const RINGS = 14;
+    const SEGS = 32;
+    const pos = [];
+    const idx = [];
+    for (let ring = 0; ring <= RINGS; ring++) {
+      const t = ring / RINGS;
+      const y = waistY + (hemY - waistY) * t;
+      // a straight fall that flares only near the hem, the way wet cloth does
+      const flare = 1 + 0.78 * Math.pow(t, 1.6);
+      for (let s = 0; s < SEGS; s++) {
+        const a = (s / SEGS) * Math.PI * 2;
+        const fold = 1 + 0.05 * Math.sin(a * 9 + t * 1.4) + 0.035 * Math.sin(a * 4 - t * 2.6);
+        const r = rWaist * flare * fold;
+        // ragged hem: cut the very bottom ring unevenly
+        const ragged = ring === RINGS ? 0.02 + 0.035 * (0.5 + 0.5 * Math.sin(a * 5.5 + 1.3)) : 0;
+        pos.push(Math.sin(a) * r, y + ragged, Math.cos(a) * r * 0.88);
+      }
+    }
+    for (let ring = 0; ring < RINGS; ring++) {
+      for (let s = 0; s < SEGS; s++) {
+        const i0 = ring * SEGS + s;
+        const i1 = ring * SEGS + ((s + 1) % SEGS);
+        const i2 = i0 + SEGS;
+        const i3 = i1 + SEGS;
+        idx.push(i0, i2, i1, i1, i2, i3);
+      }
+    }
+    const skirtGeo = new THREE.BufferGeometry();
+    skirtGeo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    skirtGeo.setIndex(idx);
+    skirtGeo.computeVertexNormals();
+    const skirt = new THREE.Mesh(skirtGeo, clothMat);
+    skirt.name = "maria-skirt";
+    skirt.castShadow = true;
+    // the skirt hangs off the pelvis, so it swings with the body
+    pelvis.attach(skirt);
+  }
+
+  if (head) {
+    const headAt = world("head");
+    const unit = (height ?? 1.73) / 1.73;
+    const crownY = headAt.y + 0.115 * unit;
+    const browY = headAt.y + 0.02 * unit;
+    const faceZ = headAt.z + 0.125 * unit; // in front of the nose, not through it
+    const STRANDS = 26;
+    const hair = new THREE.Group();
+    hair.name = "maria-hair";
+    const r = mulberry32(7);
+    for (let i = 0; i < STRANDS; i++) {
+      const f = (i % 13) / 12;
+      const layer = i < 13 ? 0 : 1; // a second, shorter layer fills the gaps
+      const x = (f - 0.5) * 0.205 * unit + (layer ? (r() - 0.5) * 0.012 : 0);
+      const length = (0.34 + 0.08 * Math.sin(f * Math.PI) + r() * 0.07) * unit;
+      const zAt = faceZ + layer * 0.028 * unit + 0.02 * Math.cos((f - 0.5) * Math.PI * 1.6);
+      const segs = 7;
+      const width = (0.036 - 0.008 * Math.abs(f - 0.5) * 2) * unit;
+      const verts = [];
+      const faces = [];
+      for (let s = 0; s <= segs; s++) {
+        const t = s / segs;
+        const y = crownY - length * t;
+        // over the skull to the brow, then straight down in front of the face
+        const curve = y > browY ? (crownY - y) / Math.max(0.001, crownY - browY) : 1;
+        const zz = (headAt.z + 0.015 + (zAt - headAt.z - 0.015) * Math.min(1, curve)) -
+          0.018 * Math.sin(t * Math.PI) * unit;
+        const sway = Math.sin(t * 2.6 + i * 0.7) * 0.012 * unit;
+        const w = (width * (1 - 0.28 * t)) / 2;
+        verts.push(x + sway - w, y, zz, x + sway + w, y, zz);
+        if (s < segs) {
+          const b = s * 2;
+          faces.push(b, b + 2, b + 1, b + 1, b + 2, b + 3);
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+      g.setIndex(faces);
+      g.computeVertexNormals();
+      const strand = new THREE.Mesh(g, hairMat);
+      strand.castShadow = true;
+      hair.add(strand);
+    }
+    head.attach(hair);
+  }
+}
+
+/** Small deterministic PRNG, so Maria's hair is the same on every load. */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 export class CharacterLibrary {
   constructor() {
@@ -118,6 +274,10 @@ export class CharacterLibrary {
 
     // 1. zero all 92 morph weights, then apply the intended ones
     for (const mesh of bodyMeshes) applyMorphs(mesh, look.morphs);
+    if (look.skin !== undefined) {
+      // keep the face map: the tint multiplies it rather than replacing it
+      for (const mesh of bodyMeshes) mesh.material = tintMaterial(mesh.material, look.skin, true);
+    }
 
     // body bone map for garment rebinding
     const bones = new Map();
@@ -191,6 +351,35 @@ export class CharacterLibrary {
     };
     play(opts.animation ?? "idle", 0);
 
+    // 3b. pieces the rig has no morph for (Maria's skirt and hair), plus pose
+    // offsets. Both are attached to bones, so both must be re-applied after the
+    // mixer writes the clip: the clip owns every bone rotation.
+    const postUpdate = [];
+    if (typeof look.extras === "function") {
+      look.extras({ holder, bones, height: targetHeight, postUpdate });
+    }
+    if (look.pose?.length) {
+      const offsets = look.pose
+        .map(([name, [x, y, z]]) => [bones.get(name), x ?? 0, y ?? 0, z ?? 0])
+        .filter(([bone]) => bone);
+      postUpdate.push(() => {
+        for (const [bone, x, y, z] of offsets) {
+          bone.rotation.x += x;
+          bone.rotation.y += y;
+          bone.rotation.z += z;
+        }
+      });
+    }
+    const stepMixer = mixer.update.bind(mixer);
+    if (postUpdate.length) {
+      mixer.update = (dt) => {
+        stepMixer(dt);
+        for (const fn of postUpdate) fn(dt);
+      };
+      // and once now, so the first frame is already posed
+      for (const fn of postUpdate) fn(0);
+    }
+
     if (opts.position) holder.position.copy(opts.position);
     if (opts.rotationY !== undefined) holder.rotation.y = opts.rotationY;
 
@@ -199,6 +388,8 @@ export class CharacterLibrary {
       mixer,
       actions,
       play,
+      bones,
+      postUpdate,
       height: targetHeight,
       dispose: () => mixer.stopAllAction(),
     };
