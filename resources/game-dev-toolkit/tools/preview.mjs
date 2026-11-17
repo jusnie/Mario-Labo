@@ -130,7 +130,7 @@ const THREE = await import("three");
 const { createSkyUniforms, updatePalette, sampleSky } = await import("../barangay/sky.js");
 const { buildWorld, buildHouse, buildHall, LAYOUT } = await import("../barangay/world.js");
 const { gardenBed } = await import("../barangay/models.js");
-const { createStore } = await import("../barangay/places.js");
+const { createStore, createErniesHouse } = await import("../barangay/places.js");
 
 // supersampled: the rasteriser has no mipmaps, so averaging 2x2 subsamples is
 // what makes fine texture detail (roof ribs, grass blades) legible at all
@@ -154,6 +154,7 @@ function sceneLighting(scene) {
   const sun = { dir: LIGHT.clone(), color: new THREE.Color(0xffffff), intensity: 1 };
   const hemi = { sky: new THREE.Color(0xffffff), ground: new THREE.Color(0x333333), intensity: 0 };
   const ambient = { color: new THREE.Color(0xffffff), intensity: 0 };
+  const points = [];
   let found = false;
   scene.traverse((o) => {
     if (o.isDirectionalLight && o.intensity > 0 && !found) {
@@ -172,6 +173,15 @@ function sceneLighting(scene) {
     } else if (o.isAmbientLight) {
       ambient.color.copy(o.color);
       ambient.intensity = o.intensity;
+    } else if (o.isPointLight && o.intensity > 0) {
+      // interior bulbs and street lamps: the only light inside a house
+      points.push({
+        pos: o.getWorldPosition(new THREE.Vector3()),
+        color: o.color.clone(),
+        intensity: o.intensity,
+        distance: o.distance || 0,
+        decay: o.decay ?? 2,
+      });
     }
   });
   if (!found) {
@@ -190,7 +200,7 @@ function sceneLighting(scene) {
     ambient.color.setHex(0x334455);
     ambient.intensity = 0.32;
   }
-  return { sun, hemi, ambient };
+  return { sun, hemi, ambient, points };
 }
 
 /** Flat colour for a material, approximating what the map would have been. */
@@ -261,6 +271,8 @@ function render(scene, camera, outPath) {
   const a = new THREE.Vector3();
   const b = new THREE.Vector3();
   const c = new THREE.Vector3();
+  const tmpTarget = new THREE.Vector3();
+  const tmpTarget2 = new THREE.Vector3();
   const n = new THREE.Vector3();
   const e1 = new THREE.Vector3();
   const e2 = new THREE.Vector3();
@@ -314,26 +326,58 @@ function render(scene, camera, outPath) {
       b.fromBufferAttribute(pos, ib).applyMatrix4(mw);
       c.fromBufferAttribute(pos, ic).applyMatrix4(mw);
 
-      // face normal
+      // face normal, from the winding, exactly as the rasteriser would see it
       e1.subVectors(b, a);
       e2.subVectors(c, a);
       n.crossVectors(e1, e2).normalize();
-      if (n.dot(e1.subVectors(eye, a)) < 0) n.negate();
+      const facing = n.dot(e1.subVectors(eye, a));
+      // Cull like the GPU. Without this the previewer drew both faces of every
+      // triangle, which is how inside-out roofs and mountains shipped: they
+      // looked perfect here and were invisible in the browser.
+      const side = mat.side ?? THREE.FrontSide;
+      if (side === THREE.FrontSide && facing < 0) continue;
+      if (side === THREE.BackSide && facing > 0) continue;
+      if (facing < 0) n.negate();
       // irradiance from the scene's own lights, in linear space
       const ndl = Math.max(0, n.dot(lights.sun.dir));
       const upness = 0.5 + 0.5 * n.y;
+      // point lights, summed over the face centroid, three's attenuation
+      const centroid = tmpTarget.copy(a).add(b).add(c).multiplyScalar(1 / 3);
+      let pr = 0;
+      let pg = 0;
+      let pb = 0;
+      for (const pl of lights.points) {
+        tmpTarget2.subVectors(pl.pos, centroid);
+        const d = tmpTarget2.length() || 1e-3;
+        if (pl.distance > 0 && d > pl.distance) continue;
+        const ndlp = Math.max(0, n.dot(tmpTarget2.multiplyScalar(1 / d)));
+        if (ndlp <= 0) continue;
+        let atten = 1 / Math.max(d * d, 0.01);
+        if (pl.distance > 0) {
+          const w = Math.min(1, Math.max(0, 1 - Math.pow(d / pl.distance, 4)));
+          atten *= w * w;
+        }
+        const e = pl.intensity * atten * ndlp;
+        pr += pl.color.r * e;
+        pg += pl.color.g * e;
+        pb += pl.color.b * e;
+      }
+
       const irrR =
-        (lights.sun.color.r * lights.sun.intensity * ndl +
+        (pr +
+          lights.sun.color.r * lights.sun.intensity * ndl +
           (lights.hemi.ground.r + (lights.hemi.sky.r - lights.hemi.ground.r) * upness) * lights.hemi.intensity +
           lights.ambient.color.r * lights.ambient.intensity) /
         Math.PI;
       const irrG =
-        (lights.sun.color.g * lights.sun.intensity * ndl +
+        (pg +
+          lights.sun.color.g * lights.sun.intensity * ndl +
           (lights.hemi.ground.g + (lights.hemi.sky.g - lights.hemi.ground.g) * upness) * lights.hemi.intensity +
           lights.ambient.color.g * lights.ambient.intensity) /
         Math.PI;
       const irrB =
-        (lights.sun.color.b * lights.sun.intensity * ndl +
+        (pb +
+          lights.sun.color.b * lights.sun.intensity * ndl +
           (lights.hemi.ground.b + (lights.hemi.sky.b - lights.hemi.ground.b) * upness) * lights.hemi.intensity +
           lights.ambient.color.b * lights.ambient.intensity) /
         Math.PI;
@@ -710,6 +754,28 @@ if (which === "store" || which === "all") {
   // stand on the road, a little off the counter axis, so the open front and the
   // shelves behind it both read
   render(scene, cameraAt({ x: 3.2, y: 1.7, z: -2.2 }, { x: 10.5, y: 1.35, z: -6.9 }, 54), "preview-store.png");
+  void world;
+}
+
+if (which === "door" || which === "all") {
+  // the front door, open: the leaf, the room behind it, and the roof over both
+  const scene = new THREE.Scene();
+  const world = buildWorld(scene, { startHour: skyHour });
+  EXPOSURE = world.exposure ?? EXPOSURE;
+  const ernie = createErniesHouse(scene, []);
+  ernie.group.updateMatrixWorld(true);
+  if (ernie.doorLeaf) ernie.doorLeaf.rotation.y = -Math.PI * 0.56;
+  scene.updateMatrixWorld(true);
+  // stand on the road, just south of the doorway, and look in through the
+  // opening past the swung leaf
+  const outward = new THREE.Vector3(0, 0, 1).transformDirection(ernie.group.matrixWorld);
+  const along = new THREE.Vector3(1, 0, 0).transformDirection(ernie.group.matrixWorld);
+  const hinge = ernie.doorLeaf.getWorldPosition(new THREE.Vector3());
+  const eye = hinge.clone().addScaledVector(outward, 2.7).addScaledVector(along, 2.5);
+  eye.y = 1.72;
+  const look = hinge.clone().addScaledVector(along, 0.5).addScaledVector(outward, -0.3);
+  look.y = 1.25;
+  render(scene, cameraAt({ x: eye.x, y: eye.y, z: eye.z }, { x: look.x, y: look.y, z: look.z }), "preview-door.png");
   void world;
 }
 

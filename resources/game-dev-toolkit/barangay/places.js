@@ -383,7 +383,7 @@ function createBench(woodMat) {
 
 /* --------------------------------------------------------- Ernie's house */
 export function createErniesHouse(scene, colliders) {
-  const { group, glass, colliders: localColliders } = buildHouse({
+  const { group, glass, colliders: localColliders, doorLeaf } = buildHouse({
     width: 8.2,
     depth: 6.6,
     storeys: 1,
@@ -391,6 +391,8 @@ export function createErniesHouse(scene, colliders) {
     wallColor: 0xcdd7c4,
     trimColor: 0x35553f,
     seed: 909,
+    openable: true,
+    interior: true,
   });
   group.position.set(-11, 0, 18);
   group.rotation.y = Math.PI / 2; // front faces the road
@@ -419,10 +421,20 @@ export function createErniesHouse(scene, colliders) {
   group.add(porch);
 
   group.updateMatrixWorld(true);
-  const doorAnchor = new THREE.Vector3(1.804, 0, 3.9).applyMatrix4(group.matrixWorld);
+  // the interaction point is measured off the door leaf itself, so it stays put
+  // if the house is ever moved or turned
+  const doorAnchor = new THREE.Vector3();
+  if (doorLeaf) {
+    doorLeaf.getWorldPosition(doorAnchor);
+    const outward = new THREE.Vector3(0, 0, 1).transformDirection(group.matrixWorld);
+    doorAnchor.addScaledVector(outward, 1.1);
+  } else {
+    doorAnchor.set(1.804, 0, 3.9).applyMatrix4(group.matrixWorld);
+  }
+  doorAnchor.y = 0;
   const windowAnchor = new THREE.Vector3(-1.6, 0, 3.9).applyMatrix4(group.matrixWorld);
 
-  return { group, glass, bulbMat, porchLight: porch, garden, doorAnchor, windowAnchor };
+  return { group, glass, bulbMat, porchLight: porch, garden, doorAnchor, windowAnchor, doorLeaf };
 }
 
 /* ------------------------------------------------------- street furniture */

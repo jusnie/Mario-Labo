@@ -5,6 +5,7 @@
  * colliders, capsule and character controller the browser runs.
  */
 import RAPIER from "@dimforge/rapier3d-compat";
+import * as THREE from "three";
 import { LAYOUT } from "./world.js";
 
 export const PLAYER = { halfHeight: 0.42, radius: 0.28 };
@@ -115,4 +116,38 @@ export function stepPlayer(physics, wishX, wishZ, velocityY, dt) {
   const grounded = ctrl.computedGrounded();
   physics.world.step();
   return { grounded, moved: Math.hypot(mv.x, mv.z), position: physics.body.translation() };
+}
+
+/**
+ * A door that actually blocks. The leaf is a kinematic body hung on the hinge,
+ * so its collider follows the swing exactly: shut, you cannot walk through the
+ * front door; open, the doorway is clear. Built from the leaf's own world
+ * transform, so moving the house moves the door with it.
+ */
+export function createSwingingDoor(world, leaf, { width, height, thickness = 0.05 } = {}) {
+  leaf.updateWorldMatrix(true, false);
+  const hinge = new THREE.Vector3();
+  leaf.getWorldPosition(hinge);
+  const baseQuat = new THREE.Quaternion();
+  leaf.getWorldQuaternion(baseQuat);
+  const body = world.createRigidBody(
+    RAPIER.RigidBodyDesc.kinematicPositionBased()
+      .setTranslation(hinge.x, hinge.y, hinge.z)
+      .setRotation({ x: baseQuat.x, y: baseQuat.y, z: baseQuat.z, w: baseQuat.w })
+  );
+  world.createCollider(
+    RAPIER.ColliderDesc.cuboid(width / 2, height / 2, thickness).setTranslation(width / 2, height / 2, 0),
+    body
+  );
+  const axis = new THREE.Vector3(0, 1, 0);
+  const swing = new THREE.Quaternion();
+  const worldQ = new THREE.Quaternion();
+  return {
+    body,
+    setAngle(angle) {
+      swing.setFromAxisAngle(axis, angle);
+      worldQ.copy(baseQuat).multiply(swing);
+      body.setNextKinematicRotation({ x: worldQ.x, y: worldQ.y, z: worldQ.z, w: worldQ.w });
+    },
+  };
 }

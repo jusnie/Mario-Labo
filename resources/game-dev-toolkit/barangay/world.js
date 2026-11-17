@@ -461,6 +461,8 @@ export function buildHouse(opts = {}) {
     porch = true,
     fence = true,
     laundry = true,
+    openable = false,
+    interior = false,
   } = opts;
   const r = rngFactory(seed);
   const group = new THREE.Group();
@@ -498,11 +500,40 @@ export function buildHouse(opts = {}) {
   }
 
   /* walls */
-  const walls = new THREE.Mesh(new THREE.BoxGeometry(width, wallH, depth), wallMat);
-  walls.position.y = floorH + wallH / 2;
-  walls.castShadow = true;
-  walls.receiveShadow = true;
-  group.add(walls);
+  const doorX = -width * 0.26;
+  /** half the clear width of the doorway, a little wider than the leaf */
+  const doorGap = 0.56;
+  const wallT = 0.18;
+  const addWall = (w, h, d, x, y, z) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    group.add(m);
+    return m;
+  };
+  if (openable) {
+    // a shell with a real opening in it: one box would leave the open door
+    // showing the plaster behind it
+    const wy = floorH + wallH / 2;
+    addWall(width, wallH, wallT, 0, wy, -depth / 2 + wallT / 2); // back
+    addWall(wallT, wallH, depth, -width / 2 + wallT / 2, wy, 0); // left
+    addWall(wallT, wallH, depth, width / 2 - wallT / 2, wy, 0); // right
+    const leftSpan = doorX - doorGap + width / 2;
+    const rightSpan = width / 2 - (doorX + doorGap);
+    const frontZ = depth / 2 - wallT / 2;
+    if (leftSpan > 0.05) addWall(leftSpan, wallH, wallT, -width / 2 + leftSpan / 2, wy, frontZ);
+    if (rightSpan > 0.05) addWall(rightSpan, wallH, wallT, width / 2 - rightSpan / 2, wy, frontZ);
+    // the door is 2.05 tall and sits at floorH: everything above it is wall
+    const lintelH = wallH - 2.12;
+    if (lintelH > 0.05) addWall(doorGap * 2, lintelH, wallT, doorX, floorH + 2.12 + lintelH / 2, frontZ);
+  } else {
+    const walls = new THREE.Mesh(new THREE.BoxGeometry(width, wallH, depth), wallMat);
+    walls.position.y = floorH + wallH / 2;
+    walls.castShadow = true;
+    walls.receiveShadow = true;
+    group.add(walls);
+  }
 
   // batten siding: shallow horizontal bands that catch the light
   const battenMat = new THREE.MeshStandardMaterial({
@@ -511,12 +542,31 @@ export function buildHouse(opts = {}) {
     roughness: 0.95,
   });
   const bands = Math.floor(wallH / 0.42);
+  const frontBattens = (i) => {
+    const y = floorH + i * 0.42;
+    if (!openable || y > floorH + 2.16) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(width + 0.04, 0.055, 0.05), battenMat);
+      b.position.set(0, y, depth / 2);
+      group.add(b);
+      return;
+    }
+    // a band must not run across the doorway
+    for (const [x0, x1] of [
+      [-width / 2, doorX - doorGap],
+      [doorX + doorGap, width / 2],
+    ]) {
+      if (x1 - x0 < 0.06) continue;
+      const b = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, 0.055, 0.05), battenMat);
+      b.position.set((x0 + x1) / 2, y, depth / 2);
+      group.add(b);
+    }
+  };
   for (let i = 1; i < bands; i++) {
-    for (const [w, d, x, z, ry] of [
-      [width + 0.04, 0.05, 0, depth / 2, 0],
-      [width + 0.04, 0.05, 0, -depth / 2, 0],
-      [0.05, depth + 0.04, width / 2, 0, 0],
-      [0.05, depth + 0.04, -width / 2, 0, 0],
+    frontBattens(i);
+    for (const [w, d, x, z] of [
+      [width + 0.04, 0.05, 0, -depth / 2],
+      [0.05, depth + 0.04, width / 2, 0],
+      [0.05, depth + 0.04, -width / 2, 0],
     ]) {
       const b = new THREE.Mesh(new THREE.BoxGeometry(w, 0.055, d), battenMat);
       b.position.set(x, floorH + i * 0.42, z);
@@ -557,8 +607,8 @@ export function buildHouse(opts = {}) {
   const frontCols = width > 7 ? 2 : 1;
   // The door sits off-centre under the porch, so the front windows get slots
   // measured from the door rather than mirrored across the middle — otherwise
-  // a shutter and a door jamb end up inside each other.
-  const doorX = -width * 0.26;
+  // a shutter and a door jamb end up inside each other. (doorX is declared
+  // above the walls: a door that opens needs a hole to open onto.)
   const frontWindowX = frontCols === 2 ? [width * 0.12, width * 0.34] : [width * 0.1];
   for (let i = 0; i < frontCols; i++) {
     const w = windowUnit({
@@ -591,7 +641,7 @@ export function buildHouse(opts = {}) {
   group.add(vent);
 
   /* door + steps + awning */
-  const door = doorUnit({ width: 1.02, height: 2.05, color: "#6b4f33" });
+  const door = doorUnit({ width: 1.02, height: 2.05, color: "#6b4f33", openable });
   door.position.set(doorX, floorH, depth / 2 + 0.03);
   group.add(door);
 
@@ -731,7 +781,48 @@ export function buildHouse(opts = {}) {
     group.add(f);
   }
 
-  colliders.push({ half: [width / 2 + 0.15, (wallH + rise) / 2 + floorH / 2, depth / 2 + 0.15], pos: [0, (wallH + rise) / 2 + floorH / 2, 0], tag: "house" });
+  if (openable) {
+    /* Walls instead of one solid block: the door leads somewhere. Split front,
+     * back and sides, a lintel over the opening, and a floor at deck height so
+     * stepping in does not drop Ernie onto the dirt under the house. */
+    const wallY = floorH + wallH / 2;
+    const t = 0.14;
+    const doorHalf = 0.62; // half the clear opening, a little wider than the leaf
+    colliders.push(
+      { half: [width / 2, wallH / 2, t], pos: [0, wallY, -depth / 2 + t], tag: "house-wall" },
+      { half: [t, wallH / 2, depth / 2], pos: [-width / 2 + t, wallY, 0], tag: "house-wall" },
+      { half: [t, wallH / 2, depth / 2], pos: [width / 2 - t, wallY, 0], tag: "house-wall" }
+    );
+    const leftSpan = doorX - doorHalf + width / 2;
+    const rightSpan = width / 2 - (doorX + doorHalf);
+    if (leftSpan > 0.05) {
+      colliders.push({
+        half: [leftSpan / 2, wallH / 2, t],
+        pos: [-width / 2 + leftSpan / 2, wallY, depth / 2 - t],
+        tag: "house-wall",
+      });
+    }
+    if (rightSpan > 0.05) {
+      colliders.push({
+        half: [rightSpan / 2, wallH / 2, t],
+        pos: [width / 2 - rightSpan / 2, wallY, depth / 2 - t],
+        tag: "house-wall",
+      });
+    }
+    const lintelH = Math.max(0.1, wallH - 2.12);
+    colliders.push({
+      half: [doorHalf, lintelH / 2, t],
+      pos: [doorX, floorH + 2.12 + lintelH / 2, depth / 2 - t],
+      tag: "house-lintel",
+    });
+    colliders.push({
+      half: [width / 2 - 0.05, 0.1, depth / 2 - 0.05],
+      pos: [0, floorH - 0.1, 0],
+      tag: "house-floor",
+    });
+  } else {
+    colliders.push({ half: [width / 2 + 0.15, (wallH + rise) / 2 + floorH / 2, depth / 2 + 0.15], pos: [0, (wallH + rise) / 2 + floorH / 2, 0], tag: "house" });
+  }
   // facade layout, kept so the tests can prove the door and windows clear
   // each other instead of relying on me eyeballing it
   group.userData.porch = porch
@@ -755,8 +846,95 @@ export function buildHouse(opts = {}) {
     windowHalfSpan: 0.525 + (1.05 * 0.24),
     wallHalf: width / 2,
   };
+  /* ---------------------------------------------------------------- inside
+   * With the front door opening, the back of the house has to exist: an open
+   * doorway onto a see-through box would show the street behind it. A back-side
+   * shell gives the room walls, and one dim bulb gives them shape.
+   */
+  let interiorLight = null;
+  if (interior) {
+    const roomMat = new THREE.MeshStandardMaterial({ color: 0x2b2620, roughness: 1, side: THREE.BackSide });
+    const room = new THREE.Mesh(new THREE.BoxGeometry(width - 0.28, wallH, depth - 0.28), roomMat);
+    room.position.y = floorH + wallH / 2;
+    room.userData.noMerge = true;
+    group.add(room);
+    const floorMat = new THREE.MeshStandardMaterial({ map: TEX.planks(6, "#6b4f36"), roughness: 0.92 });
+    // a slab, not a plane: the boards need to read from any angle inside
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(width - 0.3, 0.03, depth - 0.3), floorMat);
+    floor.position.y = floorH + 0.022;
+    floor.userData.noMerge = true;
+    group.add(floor);
+    // one bulb, low over a table: enough to read the room through the doorway,
+    // dim enough that the corners stay dark
+    const bulbMat = new THREE.MeshStandardMaterial({
+      color: 0xfff0cf,
+      emissive: new THREE.Color(0xffc176),
+      emissiveIntensity: 1.4,
+    });
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), bulbMat);
+    bulb.position.set(0, floorH + 2.32, -depth * 0.12);
+    group.add(bulb);
+    const cord = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.006, 0.006, 0.6, 3),
+      new THREE.MeshStandardMaterial({ color: 0x1c1a17, roughness: 1 })
+    );
+    cord.position.set(0, floorH + 2.72, -depth * 0.12);
+    group.add(cord);
+    interiorLight = new THREE.PointLight(0xffb066, 9, 9, 2);
+    interiorLight.position.copy(bulb.position);
+    group.add(interiorLight);
+
+    // a table and two stools, so an open door shows a home and not a box
+    const woodMatIn = new THREE.MeshStandardMaterial({ map: TEX.planks(3, "#7a5a3a"), roughness: 0.9 });
+    const table = new THREE.Group();
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.07, 0.9), woodMatIn);
+    top.position.y = 0.74;
+    table.add(top);
+    for (const [lx, lz] of [
+      [-0.62, -0.34],
+      [0.62, -0.34],
+      [-0.62, 0.34],
+      [0.62, 0.34],
+    ]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.74, 0.07), woodMatIn);
+      leg.position.set(lx, 0.37, lz);
+      table.add(leg);
+    }
+    table.position.set(0.2, floorH, -depth * 0.16);
+    group.add(table);
+    for (const [sx, sz] of [
+      [-0.85, 0.5],
+      [0.95, 0.42],
+    ]) {
+      const stool = new THREE.Group();
+      const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.18, 0.05, 10), woodMatIn);
+      seat.position.y = 0.44;
+      stool.add(seat);
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI * 2;
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.44, 6), woodMatIn);
+        leg.position.set(Math.cos(a) * 0.13, 0.22, Math.sin(a) * 0.13);
+        stool.add(leg);
+      }
+      stool.position.set(0.2 + sx, floorH, -depth * 0.16 + sz);
+      group.add(stool);
+    }
+    // a shelf on the back wall and a couple of jars on it
+    const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.05, 0.22), woodMatIn);
+    shelf.position.set(-width * 0.22, floorH + 1.45, -depth / 2 + 0.3);
+    group.add(shelf);
+    for (let k = 0; k < 3; k++) {
+      const jarIn = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.07, 0.075, 0.16 + k * 0.03, 10),
+        new THREE.MeshStandardMaterial({ color: [0x8e6a44, 0x5f7a63, 0x9a7a52][k], roughness: 0.7 })
+      );
+      jarIn.position.set(-width * 0.22 - 0.4 + k * 0.4, floorH + 1.56, -depth / 2 + 0.3);
+      group.add(jarIn);
+    }
+  }
+
   mergeStaticGroup(group);
-  return { group, glass, colliders };
+  return { group, glass, colliders, doorLeaf: door.userData.leaf ?? null, interiorLight };
 }
 
 /* -------------------------------------------------------------- barangay hall */

@@ -206,7 +206,8 @@ export function corrugatedSlab({ slopeLength, ridgeLength, ribDepth = 0.028, rib
       const b = a + 1;
       const c = a + (nz + 1);
       const d = c + 1;
-      idx.push(a, c, b, b, c, d);
+
+      idx.push(a, b, c, b, d, c);
     }
   }
   const geo = new THREE.BufferGeometry();
@@ -572,7 +573,7 @@ export function windowUnit({
 }
 
 /** Panelled door with a frame, threshold, handle and hinges. */
-export function doorUnit({ width = 1.05, height = 2.1, color = "#6b4f33", glassOut = null } = {}) {
+export function doorUnit({ width = 1.05, height = 2.1, color = "#6b4f33", glassOut = null, openable = false } = {}) {
   const g = new THREE.Group();
   const woodMat = sharedMaterial(
     `doorwood:${color}`,
@@ -583,10 +584,18 @@ export function doorUnit({ width = 1.05, height = 2.1, color = "#6b4f33", glassO
     () => new THREE.MeshStandardMaterial({ color: 0xe8e2d2, roughness: 0.75 })
   );
 
+  // The leaf hangs on its own pivot at the hinge edge, so a door can be swung
+  // open without dragging the frame, the jambs or the threshold with it. Local
+  // +X is the free edge; rotating the pivot about Y swings the leaf.
+  const leaf = new THREE.Group();
+  leaf.position.set(-width / 2, 0, 0);
+  g.add(leaf);
+  const at = width / 2; // leaf-local centre line
+
   const panel = new THREE.Mesh(new THREE.BoxGeometry(width, height, 0.08), woodMat);
-  panel.position.y = height / 2;
+  panel.position.set(at, height / 2, 0);
   panel.castShadow = true;
-  g.add(panel);
+  leaf.add(panel);
 
   // raised panels
   for (const [cy, ph] of [
@@ -601,8 +610,8 @@ export function doorUnit({ width = 1.05, height = 2.1, color = "#6b4f33", glassO
           () => new THREE.MeshStandardMaterial({ map: TEX.wood(1, "#5b4029"), roughness: 0.9 })
         )
       );
-      inset.position.set(cx, cy, 0.05);
-      g.add(inset);
+      inset.position.set(at + cx, cy, 0.05);
+      leaf.add(inset);
     }
   }
 
@@ -622,17 +631,27 @@ export function doorUnit({ width = 1.05, height = 2.1, color = "#6b4f33", glassO
     () => new THREE.MeshStandardMaterial({ color: 0xb9a06a, roughness: 0.35, metalness: 0.8 })
   );
   const knob = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), metal);
-  knob.position.set(width * 0.36, height * 0.52, 0.08);
-  g.add(knob);
+  knob.position.set(at + width * 0.36, height * 0.52, 0.08);
+  leaf.add(knob);
   const rose = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.02, 12), metal);
   rose.rotation.x = Math.PI / 2;
-  rose.position.set(width * 0.36, height * 0.52, 0.05);
-  g.add(rose);
+  rose.position.set(at + width * 0.36, height * 0.52, 0.05);
+  leaf.add(rose);
   for (const y of [height * 0.25, height * 0.75]) {
     const hinge = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.14, 0.02), metal);
-    hinge.position.set(-width / 2 + 0.03, y, 0.05);
-    g.add(hinge);
+    hinge.position.set(0.03, y, 0.05);
+    leaf.add(hinge);
   }
+  if (openable) {
+    // a swinging leaf must keep its own transform, so it cannot be baked into
+    // the merged static meshes with the rest of the house
+    leaf.traverse((o) => {
+      if (o.isMesh) o.userData.noMerge = true;
+    });
+  }
+  g.userData.leaf = leaf;
+  g.userData.doorWidth = width;
+  g.userData.doorHeight = height;
 
   // threshold
   const threshold = new THREE.Mesh(
@@ -1531,7 +1550,12 @@ export function horizonTerrain({
       const b = i * segments + j2;
       const c = (i + 1) * segments + j;
       const d = (i + 1) * segments + j2;
-      idx.push(a, c, b, b, c, d);
+      // wound counter-clockwise seen from above. The old order faced every
+      // ridge at the ground, and since the game culls back faces the whole
+      // range was invisible in a browser: the "mountains" in a screenshot were
+      // the cumulus sprites, and only the software previewer (which draws both
+      // faces) ever showed the terrain.
+      idx.push(a, b, c, b, d, c);
     }
   }
   const geo = new THREE.BufferGeometry();

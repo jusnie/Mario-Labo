@@ -74,6 +74,14 @@ export const LINES = {
     fil: "(Umupo ka sa upuan. Sumasayaw ang ilaw ng poste sa kalsada.)",
     en: "(You sit on the bench. The street lamp sways over the road.)",
   },
+  doorOpen: {
+    fil: "(Bumukas ang pinto. Malamig ang loob ng bahay — mas malamig kaysa sa kalsada.)",
+    en: "(The door swings open. The house is cold inside — colder than the street.)",
+  },
+  doorClose: {
+    fil: "(Isinara mo ang pinto. Nanatili ang amoy ng basang kahoy.)",
+    en: "(You close the door. The smell of wet wood stays.)",
+  },
   radioOn: {
     fil: "(Radyo: mahinang tugtog. Pero may sumisingit na tinig tuwing hihina ang signal.)",
     en: "(Radio: a faint tune. Something like a voice slips in whenever the signal fades.)",

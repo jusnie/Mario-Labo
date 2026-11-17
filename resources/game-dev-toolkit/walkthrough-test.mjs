@@ -40,7 +40,7 @@ const THREE = await import("three");
 const RAPIER = await import("@dimforge/rapier3d-compat");
 const { buildWorld, gableRoof, buildHouse } = await import("./barangay/world.js");
 const { createStore, createErniesHouse, buildStreetFurniture } = await import("./barangay/places.js");
-const { buildPhysics, stepPlayer } = await import("./barangay/physics.js");
+const { buildPhysics, stepPlayer, createSwingingDoor } = await import("./barangay/physics.js");
 const { surfaceAt, SURFACE_KINDS } = await import("./barangay/surfaces.js");
 const { SURFACES } = await import("./barangay/sound.js");
 
@@ -102,6 +102,51 @@ LAYOUT.playMaxZ > START_POSITION.z ? ok(`play bounds start behind the spawn at z
 /* --------------------------------------------------------------- walk it */
 section("walking the route on foot (60fps, real controller)");
 const physics = buildPhysics(world3d.colliders);
+
+/* ------------------------------------------------------------------ door */
+section("the front door");
+{
+  const leaf = house.doorLeaf;
+  let leafMeshes = 0;
+  leaf?.traverse((o) => {
+    if (o.isMesh) leafMeshes++;
+  });
+  leaf && leafMeshes >= 5
+    ? ok(`front door hangs on its own pivot (${leafMeshes} meshes kept out of the merge)`)
+    : bad("front door is not a hinged leaf");
+  leaf && leaf.rotation.y === 0 ? ok("door starts shut") : bad("door does not start shut");
+  const interiorMeshes = [];
+  house.group.traverse((o) => {
+    if (o.isMesh && o.material?.side === THREE.BackSide) interiorMeshes.push(o);
+  });
+  interiorMeshes.length ? ok("house has an interior shell, so an open door shows a room") : bad("no interior shell");
+
+  // the doorway must be walk-through with the door open and blocked with it shut
+  const doorPhysics = createSwingingDoor(physics.world, leaf, { width: 1.02, height: 2.05 });
+  // aim down the middle of the doorway, not along its edge: the anchor sits on
+  // the hinge, where a ray only grazes the leaf
+  const leafQ = new THREE.Quaternion();
+  leaf.getWorldQuaternion(leafQ);
+  const alongDoor = new THREE.Vector3(1, 0, 0).applyQuaternion(leafQ);
+  const outward = new THREE.Vector3(0, 0, 1).applyQuaternion(leafQ);
+  const inside = outward.clone().negate();
+  const from = leaf.getWorldPosition(new THREE.Vector3()).addScaledVector(alongDoor, 0.51).addScaledVector(outward, 0.9);
+  from.y = 1.1;
+  const ray = (origin, dir) =>
+    physics.world.castRay(new RAPIER.Ray({ x: origin.x, y: origin.y, z: origin.z }, { x: dir.x, y: dir.y, z: dir.z }), 20, true);
+  physics.world.step(); // the broad phase has to see the new body before a ray will
+  const shutHit = ray(from, inside);
+  const shutD = shutHit ? shutHit.timeOfImpact : Infinity;
+  doorPhysics.setAngle(-Math.PI * 0.56);
+  physics.world.step();
+  const openHit = ray(from, inside);
+  const openD = openHit ? openHit.timeOfImpact : Infinity;
+  console.log(`    ray through the doorway: shut ${shutD.toFixed(2)}m, open ${openD.toFixed(2)}m`);
+  shutD < 2.2 ? ok("shut door blocks the doorway") : bad(`shut door does not block (hit at ${shutD.toFixed(2)}m)`);
+  openD > shutD + 1.0 ? ok("open door leaves the doorway clear") : bad("open door still blocks the doorway");
+  doorPhysics.setAngle(0);
+}
+
 
 function walkTo(targetX, targetZ, seconds = 240, speed = 2.55) {
   const dt = 1 / 60;

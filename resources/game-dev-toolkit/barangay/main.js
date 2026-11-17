@@ -10,7 +10,7 @@ import * as THREE from "three";
 import RAPIER from "@dimforge/rapier3d-compat";
 
 import { buildWorld, LAYOUT } from "./world.js";
-import { buildPhysics, stepPlayer } from "./physics.js";
+import { buildPhysics, stepPlayer, createSwingingDoor } from "./physics.js";
 import { surfaceAt } from "./surfaces.js";
 import { createStore, createErniesHouse, buildStreetFurniture } from "./places.js";
 import { CharacterLibrary } from "./characters.js";
@@ -91,6 +91,9 @@ async function boot() {
 
   progress(80, "Binubuo ang physics world…");
   const physics = buildPhysics(world3d.colliders);
+  const doorBody = house.doorLeaf
+    ? createSwingingDoor(physics.world, house.doorLeaf, { width: 1.02, height: 2.05 })
+    : null;
 
   progress(92, "Handa na…");
   app.ready = true;
@@ -103,7 +106,25 @@ async function boot() {
   const promptText = $("promptText");
   const crosshair = $("crosshair");
 
+  /* Ernie's front door: the one thing in the village that answers him. */
+  const door = { open: 0, target: 0 };
+  const DOOR_SWING = Math.PI * 0.56; // just past square, the way a loose door rests
+  function toggleDoor() {
+    door.target = door.target > 0.5 ? 0 : 1;
+    audio.doorCreak();
+    showSubtitle(door.target > 0.5 ? LINES.doorOpen : LINES.doorClose, 4200);
+  }
+
   const interactables = [
+    {
+      id: "door",
+      position: new THREE.Vector3(house.doorAnchor.x, 0, house.doorAnchor.z),
+      radius: 2.3,
+      get label() {
+        return door.target > 0.5 ? "Isara ang pinto" : "Buksan ang pinto";
+      },
+      action: () => toggleDoor(),
+    },
     {
       id: "store",
       position: new THREE.Vector3(store.focusWorld.x, 0, store.focusWorld.z),
@@ -538,6 +559,16 @@ async function boot() {
         : pos.z > -240
           ? "<b>Sagingan</b> — daan patungong bulwagan"
           : "<b>Bulwagan ng Barangay</b> — bakuran";
+
+    // --- the front door swings on its hinge, eased, with a little overshoot
+    if (house.doorLeaf && door.open !== door.target) {
+      const step = 1.9 * dt;
+      door.open += Math.min(Math.abs(door.target - door.open), step) * Math.sign(door.target - door.open);
+      const t = door.open;
+      const eased = t * t * (3 - 2 * t);
+      house.doorLeaf.rotation.y = -eased * DOOR_SWING;
+      doorBody?.setAngle(-eased * DOOR_SWING);
+    }
 
     // --- interaction prompt
     let nearest = null;
